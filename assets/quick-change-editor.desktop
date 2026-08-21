@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Quick Change Editor
+GenericName=Work Tree Editor
+Comment=Edit the files a git work tree has changed, with the change shown in the gutter
+# Exec and Icon are completed by assets/install-desktop.sh: this project's
+# absolute path is not the same everywhere the tree is mounted.
+Exec=@APP_DIR@/launch.sh
+Icon=@APP_DIR@/assets/icon.svg
+Terminal=false
+StartupNotify=true
+StartupWMClass=quick-change-editor
+Categories=Development;IDE;TextEditor;
+Keywords=git;diff;editor;code;work tree;

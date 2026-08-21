@@ -1,0 +1,32 @@
+{
+  "name": "quick-change-editor",
+  "version": "1.0.0",
+  "description": "Edit the files a git work tree has changed, with the change shown in the gutter.",
+  "author": "",
+  "license": "MIT",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "NO_SANDBOX=1 electron-vite dev",
+    "build": "electron-vite build",
+    "start": "NO_SANDBOX=1 electron-vite preview",
+    "app": "./launch.sh",
+    "desktop:install": "./assets/install-desktop.sh"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.8.0",
+    "@codemirror/language": "^6.10.8",
+    "@codemirror/language-data": "^6.5.1",
+    "@codemirror/search": "^6.5.8",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.36.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^31.7.7",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.11"
+  }
+}

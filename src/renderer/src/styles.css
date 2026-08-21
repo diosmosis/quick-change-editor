@@ -1,0 +1,520 @@
+:root {
+  --bg: #16171c;
+  --bg-2: #1e1f26;
+  --bg-3: #262832;
+  --editor-bg: #1b1c22;
+  --panel: #1b1c22;
+  --border: #2f313b;
+  --text: #e6e7ea;
+  --muted: #9a9db0;
+  --accent: #5b8cff;
+  --green: #3fb950;
+  --red: #f85149;
+  --amber: #d29922;
+  --purple: #a371f7;
+  --blue: #58a6ff;
+  --radius: 8px;
+
+  /* The change bar in the editor gutter. */
+  --diff-added: #3fb950;
+  --diff-modified: #d29922;
+  --diff-removed: #f85149;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input {
+  font-family: inherit;
+}
+
+kbd {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+/* ---- layout ----------------------------------------------------------- */
+.app {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--editor-bg);
+}
+
+/* ---- sidebar ---------------------------------------------------------- */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-2);
+  border-right: 1px solid var(--border);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.repo-button {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.repo-button:hover {
+  background: var(--bg-3);
+}
+.repo-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-branch {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.icon-button:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text);
+}
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Only shown for a refresh slow enough to be worth reporting. */
+.icon-button.spinning {
+  color: var(--text);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.filter-input {
+  margin: 8px;
+  padding: 6px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  outline: none;
+}
+.filter-input:focus {
+  border-color: var(--accent);
+}
+.filter-input::placeholder {
+  color: var(--muted);
+}
+
+.tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.dir-row,
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  font-size: 12.5px;
+}
+.dir-row {
+  color: var(--muted);
+}
+.dir-row:hover,
+.file-row:hover {
+  background: var(--bg-3);
+}
+.file-row.opened {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+.file-row.active {
+  background: rgba(91, 140, 255, 0.18);
+}
+.file-row.gone .file-name {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.file-name,
+.dir-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  font-size: 9px;
+  width: 10px;
+  transition: transform 0.12s ease;
+}
+.chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.badge {
+  flex: 0 0 auto;
+  width: 15px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 3px;
+}
+
+.st-modified {
+  color: var(--amber);
+}
+.st-added,
+.st-untracked {
+  color: var(--green);
+}
+.st-deleted {
+  color: var(--red);
+}
+.st-renamed,
+.st-copied {
+  color: var(--blue);
+}
+.st-typechange {
+  color: var(--purple);
+}
+.st-conflicted {
+  color: var(--red);
+}
+
+.dirty-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.empty {
+  color: var(--muted);
+  padding: 16px 12px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.sidebar-footer {
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ---- tabs ------------------------------------------------------------- */
+.tab-strip {
+  display: flex;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 240px;
+  padding: 6px 6px 6px 10px;
+  border-right: 1px solid var(--border);
+  border-top: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.tab:hover {
+  background: var(--bg-3);
+}
+.tab.active {
+  background: var(--editor-bg);
+  border-top-color: var(--accent);
+  color: var(--text);
+}
+
+.tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-stale {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+.tab-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+/* ---- editors ---------------------------------------------------------- */
+.editors {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Every open tab stays mounted; only the active one is on screen, so tab
+   switching keeps scroll position, selection and undo history. */
+.editor-pane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+}
+.editor-pane.active {
+  display: flex;
+}
+
+.editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.notice {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  background: var(--bg-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.notice.warn {
+  color: var(--amber);
+}
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  text-align: center;
+}
+.empty-state h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+.shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  font-size: 12px;
+}
+.shortcuts kbd + kbd {
+  margin-left: 2px;
+}
+
+/* ---- status bar ------------------------------------------------------- */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  background: var(--bg-2);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.status-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-spacer {
+  flex: 1 1 auto;
+}
+.status-diff {
+  display: flex;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.status-dirty {
+  color: var(--accent);
+}
+.status-readonly {
+  color: var(--amber);
+}
+
+/* ---- modal + toast ---------------------------------------------------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.modal {
+  width: min(460px, 90vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+.modal h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.modal p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.button {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+.button:hover {
+  border-color: var(--accent);
+}
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0e1220;
+  font-weight: 600;
+}
+
+.error-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 34px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
+  padding: 8px 8px 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* ---- codemirror ------------------------------------------------------- */
+.cm-editor {
+  height: 100%;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}

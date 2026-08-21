@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#1b1c22"/>
+  <!-- the change bar: added, modified, removed -->
+  <rect x="10" y="14" width="4" height="10" rx="2" fill="#3fb950"/>
+  <rect x="10" y="27" width="4" height="10" rx="2" fill="#d29922"/>
+  <rect x="10" y="40" width="4" height="6" rx="2" fill="#f85149"/>
+  <!-- lines of code -->
+  <g fill="#e6e7ea" opacity="0.85">
+    <rect x="20" y="15" width="30" height="3" rx="1.5"/>
+    <rect x="20" y="22" width="22" height="3" rx="1.5"/>
+    <rect x="20" y="29" width="34" height="3" rx="1.5"/>
+    <rect x="20" y="36" width="26" height="3" rx="1.5"/>
+    <rect x="20" y="43" width="18" height="3" rx="1.5"/>
+  </g>
+  <!-- caret -->
+  <rect x="41" y="41" width="2" height="8" fill="#5b8cff"/>
+</svg>

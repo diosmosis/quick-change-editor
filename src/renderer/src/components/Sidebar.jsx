@@ -62,31 +62,51 @@ function compact(node) {
   }
 }
 
-function FileRow({ file, isActive, isOpen, isDirty, depth, onOpen }) {
+// A row is two buttons rather than one: the check is its own control, and a
+// button inside a button is not a thing the browser will render. The badge sits
+// outside both, so the check can come between it and the name.
+function FileRow({ file, isActive, isOpen, isDirty, isApproved, depth, onOpen, onToggleApproved }) {
   const status = statusOf(file.kind)
   const name = file.path.split('/').pop()
   const className = [
     'file-row',
     isActive ? 'active' : '',
     isOpen && !isActive ? 'opened' : '',
+    isApproved ? 'approved' : '',
     file.exists ? '' : 'gone'
   ]
     .filter(Boolean)
     .join(' ')
 
   return (
-    <button
-      className={className}
-      style={{ paddingLeft: 8 + depth * 12 }}
-      title={file.orig ? `${file.orig} → ${file.path}` : file.path}
-      onClick={() => onOpen(file)}
-    >
-      <span className="file-name">{name}</span>
-      {isDirty && <span className="dirty-dot" title="Unsaved changes" />}
+    <div className={className} style={{ paddingLeft: 8 + depth * 12 }}>
+      <button
+        type="button"
+        className="file-open"
+        title={file.orig ? `${file.orig} → ${file.path}` : file.path}
+        onClick={() => onOpen(file)}
+      >
+        <span className="file-name">{name}</span>
+        {isDirty && <span className="dirty-dot" title="Unsaved changes" />}
+      </button>
+      <button
+        type="button"
+        className="approve-mark"
+        role="checkbox"
+        aria-checked={isApproved}
+        title={
+          isApproved
+            ? 'Approved — click to clear'
+            : "Mark this file's changes approved (cleared if the file changes)"
+        }
+        onClick={() => onToggleApproved(file)}
+      >
+        ✓
+      </button>
       <span className={`badge ${status.cls}`} title={status.label}>
         {status.letter}
       </span>
-    </button>
+    </div>
   )
 }
 
@@ -127,7 +147,9 @@ function TreeNode({ node, depth, collapsed, toggle, ...rowProps }) {
               isActive={rowProps.activePath === file.path}
               isOpen={rowProps.openPaths.has(file.path)}
               isDirty={rowProps.dirtyPaths.has(file.path)}
+              isApproved={rowProps.approved.has(file.path)}
               onOpen={rowProps.onOpen}
+              onToggleApproved={rowProps.onToggleApproved}
             />
           ))}
         </>
@@ -143,8 +165,10 @@ export default function Sidebar({
   activePath,
   openPaths,
   dirtyPaths,
+  approved,
   loading,
   onOpen,
+  onToggleApproved,
   onRefresh,
   onPickRepo
 }) {
@@ -222,7 +246,9 @@ export default function Sidebar({
             activePath={activePath}
             openPaths={openPaths}
             dirtyPaths={dirtyPaths}
+            approved={approved}
             onOpen={onOpen}
+            onToggleApproved={onToggleApproved}
           />
         )}
       </div>
@@ -230,6 +256,9 @@ export default function Sidebar({
       <footer className="sidebar-footer">
         {files.length} changed file{files.length === 1 ? '' : 's'}
         {filter.trim() && files.length !== visible.length ? ` · ${visible.length} shown` : ''}
+        {approved.size > 0 && (
+          <span title="Files you have ticked off">{` · ${approved.size} approved`}</span>
+        )}
         {skipped > 0 && (
           // Said out loud rather than hidden: the count would otherwise
           // disagree with `git status` for no visible reason.

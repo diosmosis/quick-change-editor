@@ -257,6 +257,10 @@ export async function changedFiles(root) {
       // A file staged as deleted but still on disk is the odd case; trust the
       // filesystem rather than the status letters.
       exists: stat !== null,
+      // What the renderer fingerprints a file by, to tell that something
+      // rewrote it since it was last looked at.
+      mtimeMs: stat ? stat.mtimeMs : 0,
+      size: stat ? stat.size : 0,
       unopenable: unopenableBecause(stat, abs)
     })
   }

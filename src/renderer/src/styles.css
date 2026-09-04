@@ -213,6 +213,56 @@ kbd {
   text-decoration: line-through;
   color: var(--muted);
 }
+/* A file that has been ticked off recedes a little; it is one you're done with. */
+.file-row.approved .file-name {
+  color: var(--muted);
+}
+
+/* The rest of the row: the name, and what opens the file. */
+.file-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+/* The approval mark: a check rather than a box, so it sits with the badge and
+   the unsaved dot instead of looking like a form. Barely there until the row is
+   hovered — enough to say it can be clicked — and green once it's been given.
+   Hovering one that's already green fades it, which is what clicking does. */
+.approve-mark {
+  flex: 0 0 auto;
+  width: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+  opacity: 0.22;
+}
+.file-row:hover .approve-mark {
+  opacity: 0.7;
+}
+.approve-mark:hover {
+  color: var(--green);
+  opacity: 1;
+}
+.file-row.approved .approve-mark {
+  color: var(--green);
+  opacity: 1;
+}
+.file-row.approved .approve-mark:hover {
+  opacity: 0.5;
+}
 
 .file-name,
 .dir-name {

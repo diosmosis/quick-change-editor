@@ -186,7 +186,10 @@ export function registerIpc(app, store, requestedRepo = null) {
     const abs = resolveInRepo(root, relPath)
     const text = eol === 'crlf' ? content.replace(/\n/g, '\r\n') : content
     fs.writeFileSync(abs, text, 'utf8')
-    return { path: relPath, mtimeMs: fs.statSync(abs).mtimeMs }
+    const stat = fs.statSync(abs)
+    // The size comes back with the timestamp because together they are what the
+    // renderer fingerprints a file by; a save of ours has to update both.
+    return { path: relPath, mtimeMs: stat.mtimeMs, size: stat.size }
   })
 
   // Used to notice that something else (a generator, a checkout) rewrote a file

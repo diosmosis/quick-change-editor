@@ -12,6 +12,10 @@ const LOADING_DELAY = 250
 
 // Whether two status results describe the same work tree, field by field —
 // they arrive as fresh objects every time, so identity says nothing.
+//
+// mtime and size are in the comparison even though nothing draws them: an
+// approval is remembered against the file it was given to, and it would be read
+// off a stale entry here if the list stopped following a rewrite.
 function sameFiles(a, b) {
   return (
     a.length === b.length &&
@@ -22,7 +26,9 @@ function sameFiles(a, b) {
         file.kind === other.kind &&
         file.staged === other.staged &&
         file.exists === other.exists &&
-        file.orig === other.orig
+        file.orig === other.orig &&
+        file.mtimeMs === other.mtimeMs &&
+        file.size === other.size
       )
     })
   )
@@ -120,7 +126,14 @@ export default function App() {
   const [stats, setStats] = useState({})
   const [cursors, setCursors] = useState({})
   const [indents, setIndents] = useState({})
+  // Files whose changes have been ticked off, each held against the mtime and
+  // size it was ticked off at. Nothing else reads this — it is a place to keep
+  // your own count during a review pass.
+  const [approved, setApproved] = useState(() => new Map())
 
+  // Counts the files this app has written. Only used to tell a status read that
+  // predates a save of ours from one that reflects it.
+  const writes = useRef(0)
   // Imperative handles onto the mounted CodeMirror instances, by path.
   const editors = useRef(new Map())
   const editorRefCallbacks = useRef(new Map())
@@ -146,12 +159,32 @@ export default function App() {
     // Only advertise a refresh slow enough to be worth showing. Most take a few
     // milliseconds, and flashing the button for those is just noise.
     const slow = setTimeout(() => setLoading(true), LOADING_DELAY)
+    const writesBefore = writes.current
     try {
       const result = await api.status()
       // Refreshing happens on every window focus and every git change, so a
       // result identical to the last one must not re-render anything.
       setFiles((prev) => (sameFiles(prev, result.files) ? prev : result.files))
       setSkipped(result.skipped ?? 0)
+      // An approval is of the file as it stood. One that something else has
+      // rewritten since — a generator, a checkout — or that has stopped being a
+      // changed file at all, loses it. Saving here doesn't count: `saveTab`
+      // moves the tick onto what it just wrote, and a status read that started
+      // before that save is describing a file that no longer exists, so it is
+      // left to the refresh the save itself asks for.
+      if (writes.current === writesBefore) {
+        setApproved((prev) => {
+          if (prev.size === 0) return prev
+          const next = new Map()
+          for (const file of result.files) {
+            const mark = prev.get(file.path)
+            if (mark && mark.mtimeMs === file.mtimeMs && mark.size === file.size) {
+              next.set(file.path, mark)
+            }
+          }
+          return next.size === prev.size ? prev : next
+        })
+      }
       setRepo((prev) =>
         prev.root === result.root && prev.branch === result.branch
           ? prev
@@ -185,6 +218,7 @@ export default function App() {
       // Tabs belong to the repository that was open; a new one starts clean.
       setTabs([])
       setActivePath(null)
+      setApproved(new Map())
       editors.current.clear()
       await refresh()
     } catch (err) {
@@ -253,8 +287,18 @@ export default function App() {
     }
     try {
       const result = await api.saveFile({ path, content: editor.content(), eol: tab.eol })
+      writes.current++
       editor.markSaved()
       patchTab(path, { mtimeMs: result.mtimeMs, stale: false })
+      // An approval carries over what you just wrote. Whoever is editing here is
+      // the one doing the reviewing, so their own edit is approved by the making
+      // of it — it's the changes arriving from elsewhere that need another look.
+      setApproved((prev) => {
+        if (!prev.has(path)) return prev
+        const next = new Map(prev)
+        next.set(path, { mtimeMs: result.mtimeMs, size: result.size })
+        return next
+      })
       // A save can change the work tree's shape — a file edited back to its
       // committed state drops out of git status entirely.
       refresh()
@@ -264,6 +308,20 @@ export default function App() {
       return false
     }
   }, [refresh, patchTab])
+
+  // Drops several tabs in one go. Doing it through `removeTab` one at a time
+  // would pick a new active tab at every step on the way past.
+  const removeTabs = useCallback((paths) => {
+    const gone = new Set(paths)
+    if (gone.size === 0) return
+    const remaining = tabsRef.current.filter((tab) => !gone.has(tab.path))
+    setTabs(remaining)
+    for (const path of gone) {
+      editors.current.delete(path)
+      editorRefCallbacks.current.delete(path)
+    }
+    if (gone.has(activePathRef.current)) setActivePath(remaining[0]?.path ?? null)
+  }, [])
 
   const removeTab = useCallback((path) => {
     const index = tabsRef.current.findIndex((tab) => tab.path === path)
@@ -306,6 +364,44 @@ export default function App() {
     [removeTab, saveTab]
   )
 
+  // Closes the lot. Unsaved tabs are asked about together rather than one
+  // dialog after another — at the end of a review pass the answer is the same
+  // for all of them.
+  const closeAllTabs = useCallback(() => {
+    const open = tabsRef.current
+    if (open.length === 0) return
+    const dirty = open.filter((tab) => tab.dirty)
+    const paths = open.map((tab) => tab.path)
+    if (dirty.length === 0) {
+      removeTabs(paths)
+      return
+    }
+    setConfirm({
+      title: 'Unsaved changes',
+      message:
+        dirty.length === 1
+          ? `${dirty[0].path} has unsaved changes.`
+          : `${dirty.length} of these ${open.length} files have unsaved changes.`,
+      confirmLabel: 'Save all and close',
+      extraLabel: 'Discard',
+      onCancel: () => setConfirm(null),
+      onExtra: () => {
+        setConfirm(null)
+        removeTabs(paths)
+      },
+      onConfirm: async () => {
+        setConfirm(null)
+        // A file that won't save — read-only, or a write that failed — keeps
+        // its tab and its edits; the error says why. Everything else closes.
+        const kept = new Set()
+        for (const tab of dirty) {
+          if (!(await saveTab(tab.path))) kept.add(tab.path)
+        }
+        removeTabs(paths.filter((path) => !kept.has(path)))
+      }
+    })
+  }, [removeTabs, saveTab])
+
   // Steps the active editor's cursor to the change before or after it. Lives
   // here rather than in the editor's keymap so the status bar's arrows and the
   // shortcut are the same action.
@@ -320,6 +416,20 @@ export default function App() {
     const index = list.findIndex((tab) => tab.path === activePathRef.current)
     const next = (index + delta + list.length) % list.length
     setActivePath(list[next].path)
+  }, [])
+
+  // ---- approvals ---------------------------------------------------------
+
+  // Ticks a file off, or takes the tick back. The fingerprint comes from the
+  // list entry, which the refresh above keeps in step with the file on disk.
+  const toggleApproved = useCallback((file) => {
+    setApproved((prev) => {
+      const next = new Map(prev)
+      if (!next.delete(file.path)) {
+        next.set(file.path, { mtimeMs: file.mtimeMs, size: file.size })
+      }
+      return next
+    })
   }, [])
 
   // ---- staying in step with the work tree --------------------------------
@@ -422,11 +532,12 @@ export default function App() {
   // never sees these, and the application menu (which would otherwise take
   // Ctrl+W for itself) has been removed in the main process.
   const actions = useRef({})
-  actions.current = { saveTab, closeTab, cycleTab, refresh, pickRepo, gotoChange }
+  actions.current = { saveTab, closeTab, closeAllTabs, cycleTab, refresh, pickRepo, gotoChange }
 
   useEffect(() => {
     const onKeyDown = (event) => {
-      const { saveTab, closeTab, cycleTab, refresh, pickRepo, gotoChange } = actions.current
+      const { saveTab, closeTab, closeAllTabs, cycleTab, refresh, pickRepo, gotoChange } =
+        actions.current
       const mod = event.ctrlKey || event.metaKey
       const active = activePathRef.current
 
@@ -436,7 +547,10 @@ export default function App() {
       } else if (mod && event.shiftKey && event.key.toLowerCase() === 's') {
         event.preventDefault()
         for (const tab of tabsRef.current) if (tab.dirty) saveTab(tab.path)
-      } else if (mod && event.key.toLowerCase() === 'w') {
+      } else if (mod && event.shiftKey && event.key.toLowerCase() === 'w') {
+        event.preventDefault()
+        closeAllTabs()
+      } else if (mod && !event.shiftKey && event.key.toLowerCase() === 'w') {
         event.preventDefault()
         if (active) closeTab(active)
       } else if (mod && event.key.toLowerCase() === 'o') {
@@ -489,8 +603,10 @@ export default function App() {
         activePath={activePath}
         openPaths={openPaths}
         dirtyPaths={dirtyPaths}
+        approved={approved}
         loading={loading}
         onOpen={openFile}
+        onToggleApproved={toggleApproved}
         onRefresh={refresh}
         onPickRepo={pickRepo}
       />

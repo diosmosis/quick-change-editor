@@ -12,6 +12,14 @@ save.
   submodules and binary files — are left out, and the footer says how many, so
   the count still adds up against `git status`.
 - **Right:** the files you opened, one per tab, with syntax highlighting.
+- **Approving a file:** the faint check to the right of each name is there to
+  tick off as you work through the list. It means nothing to git and nothing to
+  the editor —
+  it is a way of keeping your place. A tick is against the file as it stood
+  when you gave it, so anything that rewrites the file from outside takes the
+  tick back — a generator, a checkout — and the file wants looking at again.
+  Your own saves carry the tick over: the person editing here is the one doing
+  the reviewing. The footer counts them.
 - **The change bar:** a stripe down the left of the editor — green where this
   work tree added a line, amber where it changed one, and a red wedge where it
   removed lines (hover it to see what they were).
@@ -42,6 +50,7 @@ markers, so it too keeps up with your edits.
 | `Ctrl+S` | save the current file |
 | `Ctrl+Shift+S` | save every file with unsaved edits |
 | `Ctrl+W` | close the current tab |
+| `Ctrl+Shift+W` | close every tab |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
 | `Ctrl+O` | open a different repository |
 | `F7` / `Shift+F7` | next / previous change in the current file |
@@ -51,7 +60,8 @@ markers, so it too keeps up with your edits.
 | `F12` | dev tools |
 
 Middle-clicking a tab closes it. Closing a tab with unsaved edits asks first, as
-does closing the window.
+does closing the window. Closing every tab asks once for all of them; a file
+that then refuses to save keeps its tab and its edits.
 
 ## Running it
 
@@ -102,6 +112,11 @@ checkout from another terminal):
   banner saying the file moved on disk; saving overwrites what's there. Its
   open changes stay open — nothing on screen moved — unless `HEAD` itself
   changed, which does close them.
+- An approval tick is dropped when the file's size or timestamp moves under it,
+  and when the file stops being a changed file at all (it was committed, or
+  edited back to what `HEAD` has). Saving from here moves the tick onto the
+  version it wrote rather than dropping it. Ticks last as long as the window
+  does; they are not written anywhere.
 
 ## Notes
 

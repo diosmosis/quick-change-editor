@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import Tabs from './components/Tabs'
 import Editor from './components/Editor'
 import ConfirmDialog from './components/ConfirmDialog'
+import { describeIndentation } from './lib/indentation'
 
 const api = window.api
 
@@ -59,6 +60,9 @@ function EmptyState({ hasRepo, hasFiles }) {
           <kbd>Ctrl</kbd>+<kbd>Tab</kbd> next tab
         </li>
         <li>
+          <kbd>F7</kbd> next change
+        </li>
+        <li>
           <kbd>Ctrl</kbd>+<kbd>F</kbd> find
         </li>
         <li>
@@ -69,17 +73,53 @@ function EmptyState({ hasRepo, hasFiles }) {
   )
 }
 
+// The status bar's change navigator: which of the file's changed blocks the
+// cursor is sitting in, and a pair of arrows to step between them. The position
+// reads as "–" while the cursor is on unchanged lines.
+function ChangeNav({ hunks, line, onGoto }) {
+  if (hunks.length === 0) return null
+  const index = hunks.findIndex((hunk) => line >= hunk.from && line <= hunk.to)
+  return (
+    <span className="status-nav" title="Changed blocks in this file">
+      <button
+        type="button"
+        className="nav-button"
+        onClick={() => onGoto(-1)}
+        title="Previous change (Shift+F7)"
+      >
+        ‹
+      </button>
+      <span className="nav-count">
+        {index >= 0 ? index + 1 : '–'} / {hunks.length}
+      </span>
+      <button
+        type="button"
+        className="nav-button"
+        onClick={() => onGoto(1)}
+        title="Next change (F7)"
+      >
+        ›
+      </button>
+    </span>
+  )
+}
+
 export default function App() {
   const [repo, setRepo] = useState({ root: null, branch: null, recent: [] })
   const [files, setFiles] = useState([])
+  // Changed paths left out of the list because there's nothing to edit behind
+  // them — submodules and binary files.
+  const [skipped, setSkipped] = useState(0)
   const [loading, setLoading] = useState(false)
   const [tabs, setTabs] = useState([])
   const [activePath, setActivePath] = useState(null)
   const [error, setError] = useState(null)
   const [confirm, setConfirm] = useState(null)
-  // Per-tab, updated straight from the editor: gutter counts and the caret.
+  // Per-tab, updated straight from the editor: gutter counts, the caret, and
+  // the indentation style read out of the file.
   const [stats, setStats] = useState({})
   const [cursors, setCursors] = useState({})
+  const [indents, setIndents] = useState({})
 
   // Imperative handles onto the mounted CodeMirror instances, by path.
   const editors = useRef(new Map())
@@ -111,6 +151,7 @@ export default function App() {
       // Refreshing happens on every window focus and every git change, so a
       // result identical to the last one must not re-render anything.
       setFiles((prev) => (sameFiles(prev, result.files) ? prev : result.files))
+      setSkipped(result.skipped ?? 0)
       setRepo((prev) =>
         prev.root === result.root && prev.branch === result.branch
           ? prev
@@ -265,6 +306,14 @@ export default function App() {
     [removeTab, saveTab]
   )
 
+  // Steps the active editor's cursor to the change before or after it. Lives
+  // here rather than in the editor's keymap so the status bar's arrows and the
+  // shortcut are the same action.
+  const gotoChange = useCallback((direction) => {
+    const path = activePathRef.current
+    if (path) editors.current.get(path)?.gotoChange(direction)
+  }, [])
+
   const cycleTab = useCallback((delta) => {
     const list = tabsRef.current
     if (list.length < 2) return
@@ -339,13 +388,27 @@ export default function App() {
         current &&
         current.added === next.added &&
         current.modified === next.modified &&
-        current.removed === next.removed
+        current.removed === next.removed &&
+        current.hunks.length === next.hunks.length &&
+        current.hunks.every(
+          (hunk, index) => hunk.from === next.hunks[index].from && hunk.to === next.hunks[index].to
+        )
       return same ? prev : { ...prev, [path]: next }
     })
   }, [])
 
   const onCursor = useCallback((path, position) => {
     setCursors((prev) => ({ ...prev, [path]: position }))
+  }, [])
+
+  // Re-reported every time a tab's contents are replaced, which happens on every
+  // window focus — so an unchanged answer must not re-render the status bar.
+  const onIndent = useCallback((path, indent) => {
+    setIndents((prev) => {
+      const current = prev[path]
+      const same = current && current.useTabs === indent.useTabs && current.size === indent.size
+      return same ? prev : { ...prev, [path]: indent }
+    })
   }, [])
 
   const dirtyCount = useMemo(() => tabs.filter((tab) => tab.dirty).length, [tabs])
@@ -359,11 +422,11 @@ export default function App() {
   // never sees these, and the application menu (which would otherwise take
   // Ctrl+W for itself) has been removed in the main process.
   const actions = useRef({})
-  actions.current = { saveTab, closeTab, cycleTab, refresh, pickRepo }
+  actions.current = { saveTab, closeTab, cycleTab, refresh, pickRepo, gotoChange }
 
   useEffect(() => {
     const onKeyDown = (event) => {
-      const { saveTab, closeTab, cycleTab, refresh, pickRepo } = actions.current
+      const { saveTab, closeTab, cycleTab, refresh, pickRepo, gotoChange } = actions.current
       const mod = event.ctrlKey || event.metaKey
       const active = activePathRef.current
 
@@ -382,6 +445,20 @@ export default function App() {
       } else if (mod && event.key === 'Tab') {
         event.preventDefault()
         cycleTab(event.shiftKey ? -1 : 1)
+      } else if (event.key === 'F7') {
+        event.preventDefault()
+        gotoChange(event.shiftKey ? -1 : 1)
+      } else if (
+        mod &&
+        !event.altKey &&
+        !event.shiftKey &&
+        (event.key === 'ArrowDown' || event.key === 'ArrowUp')
+      ) {
+        // Ctrl and nothing else: Alt is the editor's move-line-up/down,
+        // Ctrl+Alt its add-cursor-above/below (and a workspace switch to most
+        // Linux desktops, which take it before the app ever sees it).
+        event.preventDefault()
+        gotoChange(event.key === 'ArrowDown' ? 1 : -1)
       } else if (event.key === 'F5') {
         event.preventDefault()
         refresh()
@@ -401,12 +478,14 @@ export default function App() {
   const activeTab = tabs.find((tab) => tab.path === activePath) || null
   const activeStats = activePath ? stats[activePath] : null
   const activeCursor = activePath ? cursors[activePath] : null
+  const activeIndent = activePath ? indents[activePath] : null
 
   return (
     <div className="app">
       <Sidebar
         repo={repo}
         files={files}
+        skipped={skipped}
         activePath={activePath}
         openPaths={openPaths}
         dirtyPaths={dirtyPaths}
@@ -444,6 +523,7 @@ export default function App() {
                 onDirtyChange={onDirtyChange}
                 onStats={onStats}
                 onCursor={onCursor}
+                onIndent={onIndent}
               />
             </div>
           ))}
@@ -452,6 +532,13 @@ export default function App() {
         <footer className="status-bar">
           <span className="status-path">{activeTab ? activeTab.path : repo.root || ''}</span>
           <span className="status-spacer" />
+          {activeStats && (
+            <ChangeNav
+              hunks={activeStats.hunks}
+              line={activeCursor?.line ?? 0}
+              onGoto={gotoChange}
+            />
+          )}
           {activeStats && (
             <span className="status-diff" title="Lines added, changed and removed since HEAD">
               <span className="st-added">+{activeStats.added}</span>
@@ -462,6 +549,11 @@ export default function App() {
           {activeCursor && (
             <span>
               Ln {activeCursor.line}, Col {activeCursor.column}
+            </span>
+          )}
+          {activeIndent && (
+            <span title="Indentation detected in this file — what Tab and Enter will insert">
+              {describeIndentation(activeIndent)}
             </span>
           )}
           {activeTab && <span>{activeTab.eol === 'crlf' ? 'CRLF' : 'LF'}</span>}

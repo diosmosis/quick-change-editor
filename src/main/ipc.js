@@ -171,7 +171,8 @@ export function registerIpc(app, store, requestedRepo = null) {
 
   ipcMain.handle('repo:status', async () => {
     const root = requireRepo()
-    return { root, branch: await currentBranch(root), files: await changedFiles(root) }
+    const { files, skipped } = await changedFiles(root)
+    return { root, branch: await currentBranch(root), files, skipped }
   })
 
   // ---- Files ------------------------------------------------------------

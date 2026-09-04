@@ -17,12 +17,14 @@ import {
   bracketMatching,
   foldGutter,
   foldKeymap,
-  indentOnInput
+  indentOnInput,
+  indentUnit
 } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 import { oneDark } from '@codemirror/theme-one-dark'
 
-import { diffGutter, setDiffBase } from '../lib/diffGutter'
+import { clearDiffExpansions, diffGutter, gotoChange, setDiffBase } from '../lib/diffGutter'
+import { detectIndentation } from '../lib/indentation'
 
 // Sits after oneDark so it wins: the editor has to match the rest of the app's
 // chrome rather than bring its own background.
@@ -54,6 +56,13 @@ function readOnlyExtension(readOnly) {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]
 }
 
+// What Tab, Enter and indent-on-input insert, taken from the file rather than
+// left at CodeMirror's default of two spaces. `tabSize` goes with it so any tab
+// already in the document is drawn at the same width the indenting assumes.
+function indentExtension({ useTabs, size }) {
+  return [indentUnit.of(useTabs ? '\t' : ' '.repeat(size)), EditorState.tabSize.of(size)]
+}
+
 /**
  * One CodeMirror instance, one open file. The parent keeps every open tab's
  * editor mounted (hidden when inactive) so switching tabs preserves the
@@ -64,7 +73,18 @@ function readOnlyExtension(readOnly) {
  * mean a re-render per keystroke.
  */
 const Editor = forwardRef(function Editor(
-  { path, name, initialContent, initialBase, readOnly, active, onDirtyChange, onStats, onCursor },
+  {
+    path,
+    name,
+    initialContent,
+    initialBase,
+    readOnly,
+    active,
+    onDirtyChange,
+    onStats,
+    onCursor,
+    onIndent
+  },
   ref
 ) {
   const hostRef = useRef(null)
@@ -76,12 +96,16 @@ const Editor = forwardRef(function Editor(
   // A file can be deleted (or restored) from under an open tab, which changes
   // whether it may be edited, so this can't be baked in at construction.
   const readOnlyRef = useRef(new Compartment())
+  // Likewise the indentation: a file rewritten on disk can come back in a
+  // different style, and the answer is read out of the new text.
+  const indentRef = useRef(new Compartment())
   // Callbacks are read through a ref so the view is built exactly once, no
   // matter how often the parent re-renders.
-  const handlers = useRef({ onDirtyChange, onStats, onCursor })
-  handlers.current = { onDirtyChange, onStats, onCursor }
+  const handlers = useRef({ onDirtyChange, onStats, onCursor, onIndent })
+  handlers.current = { onDirtyChange, onStats, onCursor, onIndent }
 
   useEffect(() => {
+    const indent = detectIndentation(initialContent)
     const state = EditorState.create({
       doc: initialContent,
       extensions: [
@@ -102,6 +126,7 @@ const Editor = forwardRef(function Editor(
         highlightSelectionMatches(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...foldKeymap, indentWithTab]),
         readOnlyRef.current.of(readOnlyExtension(Boolean(readOnly))),
+        indentRef.current.of(indentExtension(indent)),
         EditorView.lineWrapping,
         oneDark,
         appTheme,
@@ -129,6 +154,10 @@ const Editor = forwardRef(function Editor(
     const view = new EditorView({ state, parent: hostRef.current })
     viewRef.current = view
     savedDocRef.current = state.doc
+    // The listener above only fires once something moves, so the status bar
+    // would otherwise have no caret position until the first keystroke.
+    handlers.current.onCursor?.(path, { line: 1, column: 1 })
+    handlers.current.onIndent?.(path, indent)
 
     return () => {
       view.destroy()
@@ -172,6 +201,10 @@ const Editor = forwardRef(function Editor(
     content: () => viewRef.current?.state.doc.toString() ?? '',
     focus: () => viewRef.current?.focus(),
 
+    // Jumps to the change before (-1) or after (1) the cursor, wrapping around.
+    gotoChange: (direction) =>
+      viewRef.current ? gotoChange(viewRef.current, direction) : false,
+
     // Called after a successful write: the document on screen is now what's on
     // disk, so it is no longer dirty.
     markSaved: () => {
@@ -208,11 +241,17 @@ const Editor = forwardRef(function Editor(
         if (base !== undefined) setDiffBase(view, base)
         return
       }
+      const indent = detectIndentation(content)
+      // The text these were opened against is about to be replaced, so what
+      // they show would be a comparison against a file that no longer exists.
+      clearDiffExpansions(view)
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: content },
         // A full replace would otherwise scroll the file back to the top.
-        scrollIntoView: false
+        scrollIntoView: false,
+        effects: indentRef.current.reconfigure(indentExtension(indent))
       })
+      handlers.current.onIndent?.(path, indent)
       savedDocRef.current = view.state.doc
       if (dirtyRef.current) {
         dirtyRef.current = false

@@ -157,8 +157,77 @@ function ignoredPaths(root, paths) {
   })
 }
 
-// Every path git considers changed in the work tree: staged, unstaged and
-// untracked alike, minus anything gitignore covers.
+// Follows symlinks, so a link to a file counts as a file. Returns null when the
+// path isn't there at all (including a dangling link), which is what
+// `existsSync` used to answer here.
+function statOrNull(abs) {
+  try {
+    return fs.statSync(abs)
+  } catch {
+    return null
+  }
+}
+
+// The same first-block NUL test `looksBinary` does, but reading only that block
+// rather than the whole file — this runs over every changed path on every
+// refresh, and some of them are the multi-megabyte assets we're looking for.
+function looksBinaryOnDisk(abs) {
+  let fd = null
+  try {
+    fd = fs.openSync(abs, 'r')
+    const buf = Buffer.alloc(8000)
+    const read = fs.readSync(fd, buf, 0, 8000, 0)
+    return looksBinary(buf.subarray(0, read))
+  } catch {
+    // Unreadable is not the same as binary. Leave it listed, and let opening it
+    // report the real problem.
+    return false
+  } finally {
+    if (fd !== null) fs.closeSync(fd)
+  }
+}
+
+// Which of `paths` HEAD holds as binary content.
+//
+// Only asked about paths that are gone from the work tree, where there is
+// nothing left on disk to sniff: --numstat reports a binary file as "-" added
+// and "-" removed in place of line counts.
+async function binaryInHead(root, paths) {
+  if (paths.length === 0) return new Set()
+  const out = await gitOrNull(root, ['diff', '--numstat', '-z', 'HEAD', '--', ...paths])
+  if (!out) return new Set()
+  const found = new Set()
+  for (const entry of splitNul(out)) {
+    // A rename would spread its two paths over further fields, but a path that
+    // has gone from the work tree is never the target of one.
+    if (entry.startsWith('-\t-\t')) found.add(entry.slice(4))
+  }
+  return found
+}
+
+// Why a changed path isn't worth a row in the tree, or null if it is.
+//
+// A submodule is recorded as a single gitlink entry, so it arrives here looking
+// like an ordinary changed path whose work-tree counterpart is a directory —
+// there is nothing behind it to open, and its own changes belong to its own
+// repository. A binary file has nothing this editor can show either; it used to
+// be listed and then refuse to open.
+function unopenableBecause(stat, abs) {
+  if (!stat) return null // Gone from the work tree; `binaryInHead` judges these.
+  if (stat.isDirectory()) return 'submodule'
+  if (!stat.isFile()) return null // A fifo or socket; vanishingly rare, let it through.
+  return looksBinaryOnDisk(abs) ? 'binary' : null
+}
+
+/**
+ * Every path git considers changed in the work tree: staged, unstaged and
+ * untracked alike, minus anything gitignore covers and anything this editor
+ * couldn't open anyway.
+ *
+ * Returns { files, skipped }, where `skipped` counts what the last filter
+ * dropped — the sidebar says so rather than quietly disagreeing with
+ * `git status`.
+ */
 export async function changedFiles(root) {
   const out = await git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
   const fields = splitNul(out)
@@ -176,6 +245,8 @@ export async function changedFiles(root) {
     if (x === 'R' || x === 'C' || y === 'R' || y === 'C') {
       orig = fields[++i] ?? null
     }
+    const abs = path.join(root, filePath)
+    const stat = statOrNull(abs)
     files.push({
       path: filePath,
       orig,
@@ -185,15 +256,25 @@ export async function changedFiles(root) {
       staged: x !== ' ' && x !== '?',
       // A file staged as deleted but still on disk is the odd case; trust the
       // filesystem rather than the status letters.
-      exists: fs.existsSync(path.join(root, filePath))
+      exists: stat !== null,
+      unopenable: unopenableBecause(stat, abs)
     })
   }
 
   const ignored = await ignoredPaths(root, files.map((file) => file.path))
   const visible = ignored.size === 0 ? files : files.filter((file) => !ignored.has(file.path))
 
-  visible.sort((a, b) => a.path.localeCompare(b.path))
-  return visible
+  const binaryGone = await binaryInHead(
+    root,
+    visible.filter((file) => !file.exists).map((file) => file.path)
+  )
+
+  // `unopenable` was only ever a working note; it doesn't need to cross IPC.
+  const openable = visible
+    .filter((file) => file.unopenable === null && !binaryGone.has(file.path))
+    .map(({ unopenable, ...file }) => file)
+  openable.sort((a, b) => a.path.localeCompare(b.path))
+  return { files: openable, skipped: visible.length - openable.length }
 }
 
 // The committed content a work-tree file should be compared against: HEAD's

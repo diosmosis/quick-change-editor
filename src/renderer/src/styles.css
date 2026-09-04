@@ -19,6 +19,10 @@
   --diff-added: #3fb950;
   --diff-modified: #d29922;
   --diff-removed: #f85149;
+
+  /* Behind the text of an opened change — faint enough to read code through. */
+  --diff-added-bg: rgba(63, 185, 80, 0.14);
+  --diff-removed-bg: rgba(248, 81, 73, 0.14);
 }
 
 * {
@@ -436,6 +440,31 @@ kbd {
   gap: 8px;
   font-variant-numeric: tabular-nums;
 }
+.status-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav-button {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted);
+  padding: 0 5px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.nav-button:hover {
+  background: var(--bg-3);
+  color: var(--text);
+}
+.nav-count {
+  /* Fixed width so stepping from 9 to 10 doesn't shift the arrows. */
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .status-dirty {
   color: var(--accent);
 }
@@ -517,4 +546,19 @@ kbd {
 }
 .cm-editor.cm-focused {
   outline: none;
+}
+
+/* Where a jump between changes landed. It fades on its own; the class is
+   removed shortly after, so a second jump to the same block replays it. */
+.cm-changeFlash {
+  animation: change-flash 0.7s ease-out;
+}
+
+@keyframes change-flash {
+  from {
+    background: rgba(91, 140, 255, 0.3);
+  }
+  to {
+    background: transparent;
+  }
 }

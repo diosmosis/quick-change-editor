@@ -139,6 +139,7 @@ function TreeNode({ node, depth, collapsed, toggle, ...rowProps }) {
 export default function Sidebar({
   repo,
   files,
+  skipped,
   activePath,
   openPaths,
   dirtyPaths,
@@ -206,9 +207,11 @@ export default function Sidebar({
           <p className="empty">
             {!repo.root
               ? 'No repository open.'
-              : files.length === 0
-                ? 'The work tree is clean.'
-                : 'No file matches the filter.'}
+              : files.length > 0
+                ? 'No file matches the filter.'
+                : skipped > 0
+                  ? 'Nothing editable has changed — only submodules and binary files.'
+                  : 'The work tree is clean.'}
           </p>
         ) : (
           <TreeNode
@@ -227,6 +230,13 @@ export default function Sidebar({
       <footer className="sidebar-footer">
         {files.length} changed file{files.length === 1 ? '' : 's'}
         {filter.trim() && files.length !== visible.length ? ` · ${visible.length} shown` : ''}
+        {skipped > 0 && (
+          // Said out loud rather than hidden: the count would otherwise
+          // disagree with `git status` for no visible reason.
+          <span title="Submodules and binary files, which this editor can't open">
+            {` · ${skipped} not editable`}
+          </span>
+        )}
       </footer>
     </aside>
   )

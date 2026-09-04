@@ -22,7 +22,11 @@ save.
   the reviewing. The footer counts them.
 - **The change bar:** a stripe down the left of the editor — green where this
   work tree added a line, amber where it changed one, and a red wedge where it
-  removed lines (hover it to see what they were).
+  removed lines (hover it to see what they were). Whitespace is ignored, the way
+  `git diff -w` ignores it: a line that was only reindented, or that gained a
+  trailing space or lost the spaces around an operator, is not a change and is
+  not marked. A reformatting pass over a file therefore leaves only the lines
+  whose content actually moved.
 
 - **Opening a change:** clicking the change bar shows what that one change
   replaced. The lines it took out appear above it on red — they are not part of
@@ -41,7 +45,9 @@ save.
 The change bar is computed against `HEAD` in the renderer, not read out of `git
 diff`, so it follows what you type: undo a generated change by hand and its
 marker disappears without saving first. The navigator steps through the same
-markers, so it too keeps up with your edits.
+markers, so it too keeps up with your edits — and since whitespace is not a
+change, neither the bar, the navigator, nor the `+ ~ −` counts in the status bar
+will ever send you to a line that was only respaced.
 
 ## Shortcuts
 

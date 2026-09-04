@@ -16,6 +16,20 @@ function splitLines(text) {
   return text.length === 0 ? [] : text.split('\n')
 }
 
+// Whitespace is not what this editor is for looking at. A generator that
+// reindented a block, or a trailing space that came and went, would otherwise
+// mark lines whose content nobody changed and bury the change actually worth
+// reviewing. Lines are matched on their non-whitespace content instead — the
+// rule `git diff -w` uses — so a line differing from the committed one only in
+// spacing is not marked, not counted and not stepped through.
+const squeeze = (line) => line.replace(/\s+/g, '')
+
+// Identical lines are the overwhelming majority, so the substitution only runs
+// on the ones that really do differ.
+function sameLine(x, y) {
+  return x === y || squeeze(x) === squeeze(y)
+}
+
 // Collects the matched (a-index, b-index) pairs of a shortest edit script.
 // Returns null when the edit distance exceeds MAX_D.
 function matchPairs(a, b) {
@@ -88,8 +102,9 @@ const unpackA = (p) => Math.floor(p / 2 ** 24)
 const unpackB = (p) => p % 2 ** 24
 
 // Compares line-for-line from the top. Used when the real diff would cost too
-// much; every position that differs is reported as a change. `base` is the
-// untrimmed base text and `offset` the number of lines trimmed off its front.
+// much; every position that differs is reported as a change. `a` and `b` are
+// squeezed lines, `base` the untrimmed base text the reported content is sliced
+// out of, and `offset` the number of lines trimmed off its front.
 function positionalChanges(a, b, offset, base) {
   const changes = []
   const common = Math.min(a.length, b.length)
@@ -130,6 +145,9 @@ function makeChange(baseLines, baseStart, baseEnd, curStart, curEnd) {
  * with `curStart`/`curCount` indexing the *current* text (0-based lines) and
  * `baseStart`/`baseCount` the committed one. A pure insertion has
  * `baseCount === 0`, a pure deletion `curCount === 0`.
+ *
+ * Lines that differ only in whitespace count as the same line and appear in no
+ * region at all.
  */
 export function computeLineChanges(baseText, curText) {
   if (baseText === curText) return []
@@ -142,11 +160,14 @@ export function computeLineChanges(baseText, curText) {
   // three lines" diff; stripping them is what keeps the edit distance small.
   let prefix = 0
   const maxPrefix = Math.min(base.length, cur.length)
-  while (prefix < maxPrefix && base[prefix] === cur[prefix]) prefix++
+  while (prefix < maxPrefix && sameLine(base[prefix], cur[prefix])) prefix++
 
   let suffix = 0
   const maxSuffix = maxPrefix - prefix
-  while (suffix < maxSuffix && base[base.length - 1 - suffix] === cur[cur.length - 1 - suffix]) {
+  while (
+    suffix < maxSuffix &&
+    sameLine(base[base.length - 1 - suffix], cur[cur.length - 1 - suffix])
+  ) {
     suffix++
   }
 
@@ -157,8 +178,15 @@ export function computeLineChanges(baseText, curText) {
     return [makeChange(base, prefix, prefix + a.length, prefix, prefix + b.length)]
   }
 
-  const matches = matchPairs(a, b)
-  if (matches === null) return positionalChanges(a, b, prefix, base)
+  // Past this point the diff runs over squeezed lines, so it never pairs two
+  // that differ in more than their whitespace and never separates two that
+  // differ in nothing else. The originals are kept for `removed`, which is text
+  // to be shown rather than compared.
+  const aKeys = a.map(squeeze)
+  const bKeys = b.map(squeeze)
+
+  const matches = matchPairs(aKeys, bKeys)
+  if (matches === null) return positionalChanges(aKeys, bKeys, prefix, base)
 
   const changes = []
   let ai = 0

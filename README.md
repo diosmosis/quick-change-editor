@@ -3,7 +3,7 @@
 An Electron editor for the files a git work tree has changed — the ones `git
 diff` would show. It exists to make the last pass over generated code before a
 commit quick: open only what changed, see exactly which lines changed, fix them,
-save.
+tick them off, and commit the ones you ticked without leaving the window.
 
 - **Left:** every changed path in the work tree — staged, unstaged and untracked
   alike — as a tree, with a status badge: `M` modified, `A` added (whether or
@@ -13,13 +13,16 @@ save.
   the count still adds up against `git status`.
 - **Right:** the files you opened, one per tab, with syntax highlighting.
 - **Approving a file:** the faint check to the right of each name is there to
-  tick off as you work through the list. It means nothing to git and nothing to
-  the editor —
-  it is a way of keeping your place. A tick is against the file as it stood
+  tick off as you work through the list. A tick is against the file as it stood
   when you gave it, so anything that rewrites the file from outside takes the
   tick back — a generator, a checkout — and the file wants looking at again.
   Your own saves carry the tick over: the person editing here is the one doing
   the reviewing. The footer counts them.
+- **Committing:** the button under the tree commits the ticked-off files, and
+  only those. It asks for a message, lists what is about to go in, and leaves
+  everything else in the work tree exactly where it was — including anything
+  already staged that you didn't tick. See [What gets
+  committed](#what-gets-committed).
 - **The change bar:** a stripe down the left of the editor — green where this
   work tree added a line, amber where it changed one, and a red wedge where it
   removed lines (hover it to see what they were). Whitespace is ignored, the way
@@ -59,6 +62,7 @@ will ever send you to a line that was only respaced.
 | `Ctrl+Shift+W` | close every tab |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
 | `Ctrl+O` | open a different repository |
+| `Ctrl+Enter` | commit the approved files (and again, in the dialog, to commit) |
 | `F7` / `Shift+F7` | next / previous change in the current file |
 | `Ctrl+↓` / `Ctrl+↑` | the same, for the arrow-key inclined |
 | `Ctrl+F` | find in the current file |
@@ -104,6 +108,35 @@ installing; `launch.sh` already accepts a repository path.
 
 Without a path argument the app reopens the repository it had last time; the
 name in the top left opens the picker.
+
+## What gets committed
+
+The commit names its paths — `git commit -m … -- <the approved files>` — which
+is what keeps it to the files you ticked. Git takes those paths from the work
+tree and leaves every other index entry alone, so a file someone staged and
+nobody approved stays staged and uncommitted, and comes back next time.
+
+- **What is committed is what is on disk**, not what was staged. A file staged
+  at one version and then edited again commits as it now reads; the editor has
+  been showing you the work-tree version all along, and that is the version the
+  tick was given to.
+- **An approved tab with unsaved edits is saved first**, and the dialog says so
+  before you commit. Committing the older text sitting on disk would not be the
+  thing that was approved.
+- **A rename commits both of its paths.** Naming only the new one would commit
+  the copy and leave the original in the tree.
+- **An untracked file is added first**, because git will not accept a path it
+  has never seen in a commit like this. If the commit is then refused — a
+  `pre-commit` hook, an unset `user.email` — that add is undone, so a failure
+  leaves the index exactly as it found it and the dialog stays up to try again.
+  Whatever git or the hook said is shown verbatim.
+- **Not during a merge, cherry-pick, revert or rebase.** Git refuses to commit
+  part of a work tree mid-merge; mid-rebase it does *not* refuse, and quietly
+  puts the commit on the detached head the rebase is building, where finishing
+  the rebase loses it. Both are turned down here with a message pointing at the
+  terminal.
+
+Hooks run normally, and their output is what you get back on a failure.
 
 ## How it stays in step with the work tree
 

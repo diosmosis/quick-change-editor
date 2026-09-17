@@ -334,6 +334,16 @@ kbd {
   font-size: 11px;
 }
 
+.commit-bar {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.commit-button {
+  width: 100%;
+}
+
 /* ---- tabs ------------------------------------------------------------- */
 .tab-strip {
   display: flex;
@@ -573,8 +583,86 @@ kbd {
   color: #0e1220;
   font-weight: 600;
 }
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.button:disabled:hover {
+  border-color: var(--border);
+}
 
-.error-toast {
+/* ---- commit dialog ---------------------------------------------------- */
+.commit-modal {
+  width: min(560px, 92vw);
+}
+/* The file list is the point of the dialog, so it gets the room; the whole
+   thing still has to fit a short window. */
+.commit-modal h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.commit-branch {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.commit-message {
+  display: block;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+.commit-message:focus {
+  border-color: var(--accent);
+}
+.commit-message::placeholder {
+  color: var(--muted);
+}
+
+.commit-files {
+  max-height: min(240px, 30vh);
+  overflow: auto;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.commit-files li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 10px;
+}
+.commit-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-note {
+  margin: 10px 0 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+  word-break: normal;
+}
+
+/* ---- toasts ----------------------------------------------------------- */
+.toast {
   position: fixed;
   right: 16px;
   bottom: 34px;
@@ -585,9 +673,18 @@ kbd {
   max-width: 520px;
   padding: 8px 8px 8px 14px;
   background: var(--panel);
-  border: 1px solid var(--red);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+.error-toast {
+  border-color: var(--red);
+  /* git's own words, hook output included — newlines are part of them. */
+  white-space: pre-wrap;
+}
+.notice-toast {
+  border-color: var(--green);
+  padding-right: 14px;
 }
 
 /* ---- codemirror ------------------------------------------------------- */

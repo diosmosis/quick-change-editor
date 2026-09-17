@@ -6,6 +6,8 @@ const api = {
   getRepo: () => ipcRenderer.invoke('repo:get'),
   openRepo: (dir = null) => ipcRenderer.invoke('repo:open', dir),
   status: () => ipcRenderer.invoke('repo:status'),
+  // { files: [{ path, orig, kind }], message } — commits those paths only.
+  commit: (args) => ipcRenderer.invoke('repo:commit', args),
 
   // files
   openFile: (file) => ipcRenderer.invoke('file:open', file),

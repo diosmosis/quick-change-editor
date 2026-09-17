@@ -7,6 +7,7 @@ import {
   findRepoRoot,
   currentBranch,
   changedFiles,
+  commitFiles,
   gitIsSettled,
   baseText,
   resolveInRepo,
@@ -173,6 +174,19 @@ export function registerIpc(app, store, requestedRepo = null) {
     const root = requireRepo()
     const { files, skipped } = await changedFiles(root)
     return { root, branch: await currentBranch(root), files, skipped }
+  })
+
+  // Commits the files the renderer says have been approved, and only those.
+  // The entries are rebuilt field by field rather than passed through: they
+  // arrive as arbitrary renderer values and end up as git arguments.
+  ipcMain.handle('repo:commit', async (_e, { files = [], message = '' } = {}) => {
+    const entries = files.map((file) => ({
+      path: String(file?.path ?? ''),
+      orig: file?.orig ? String(file.orig) : null,
+      kind: String(file?.kind ?? '')
+    }))
+    if (entries.some((entry) => entry.path === '')) throw new Error('A file to commit had no path.')
+    return commitFiles(requireRepo(), entries, String(message))
   })
 
   // ---- Files ------------------------------------------------------------

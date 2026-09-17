@@ -3,12 +3,16 @@ import Sidebar from './components/Sidebar'
 import Tabs from './components/Tabs'
 import Editor from './components/Editor'
 import ConfirmDialog from './components/ConfirmDialog'
+import CommitDialog from './components/CommitDialog'
 import { describeIndentation } from './lib/indentation'
 
 const api = window.api
 
 // How long a refresh has to run before it's worth saying so in the UI.
 const LOADING_DELAY = 250
+
+// How long the "committed" toast stays up. Long enough to read the hash off it.
+const NOTICE_MS = 6000
 
 // Whether two status results describe the same work tree, field by field —
 // they arrive as fresh objects every time, so identity says nothing.
@@ -74,6 +78,9 @@ function EmptyState({ hasRepo, hasFiles }) {
         <li>
           <kbd>F5</kbd> refresh
         </li>
+        <li>
+          <kbd>Ctrl</kbd>+<kbd>Enter</kbd> commit approved
+        </li>
       </ul>
     </div>
   )
@@ -120,7 +127,11 @@ export default function App() {
   const [tabs, setTabs] = useState([])
   const [activePath, setActivePath] = useState(null)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  // The commit dialog, and whether git is currently running on its behalf.
+  const [committing, setCommitting] = useState(false)
+  const [commitOpen, setCommitOpen] = useState(false)
   // Per-tab, updated straight from the editor: gutter counts, the caret, and
   // the indentation style read out of the file.
   const [stats, setStats] = useState({})
@@ -467,6 +478,82 @@ export default function App() {
     }
   }, [patchTab])
 
+  // ---- committing --------------------------------------------------------
+
+  // The rows the tick marks point at, in the order the sidebar shows them.
+  const approvedFiles = useMemo(
+    () => files.filter((file) => approved.has(file.path)),
+    [files, approved]
+  )
+
+  const openCommit = useCallback(() => {
+    if (approvedFiles.length > 0) setCommitOpen(true)
+  }, [approvedFiles])
+
+  const commit = useCallback(
+    async (text) => {
+      if (approvedFiles.length === 0) return
+      setCommitting(true)
+      // A rejected commit leaves its error up so it can be read and acted on;
+      // a second attempt is not the moment to still be showing the first one.
+      setError(null)
+      try {
+        // A tick was given to what was on screen, and an unsaved tab holds a
+        // newer version than the one git would pick up off the disk. Writing
+        // them out first is the only reading of "commit what I approved" that
+        // isn't a lie. One that won't save stops the commit, with its own error
+        // already on screen — committing the rest silently would be worse.
+        for (const tab of tabsRef.current) {
+          if (!tab.dirty || !approved.has(tab.path)) continue
+          if (!(await saveTab(tab.path))) return
+        }
+        const result = await api.commit({
+          files: approvedFiles.map((file) => ({
+            path: file.path,
+            orig: file.orig ?? null,
+            kind: file.kind
+          })),
+          message: text
+        })
+        setCommitOpen(false)
+        // Everything that was ticked off is now in a commit, so the pass is
+        // over; the refresh below would drop these anyway as they leave the
+        // changed-file list, but not until it comes back.
+        setApproved(new Map())
+        setNotice(
+          `Committed ${result.count} file${result.count === 1 ? '' : 's'}` +
+            (result.hash ? ` as ${result.hash}` : '')
+        )
+        // Our own git commands suppress the .git watcher — it can't tell them
+        // from someone else's — so the refresh has to be asked for here. The
+        // tab sync goes with it to move every open gutter onto the new HEAD.
+        await refresh()
+        await syncOpenTabs()
+      } catch (err) {
+        setError(message(err))
+      } finally {
+        setCommitting(false)
+      }
+    },
+    [approvedFiles, approved, saveTab, refresh, syncOpenTabs]
+  )
+
+  // An approval is dropped the moment something rewrites the file it was given
+  // to, and a refresh runs on every window focus — so the list behind the open
+  // dialog can empty out under it. There is nothing left to commit at that
+  // point, and a dialog offering to commit nothing is worse than none.
+  useEffect(() => {
+    if (commitOpen && !committing && approvedFiles.length === 0) setCommitOpen(false)
+  }, [commitOpen, committing, approvedFiles])
+
+  // Nothing has to be dismissed by hand: a commit's confirmation is worth a
+  // glance, not a click.
+  useEffect(() => {
+    if (!notice) return undefined
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
+
   useEffect(() => {
     const unsubscribe = api.onRepoChanged(() => {
       refresh()
@@ -532,16 +619,43 @@ export default function App() {
   // never sees these, and the application menu (which would otherwise take
   // Ctrl+W for itself) has been removed in the main process.
   const actions = useRef({})
-  actions.current = { saveTab, closeTab, closeAllTabs, cycleTab, refresh, pickRepo, gotoChange }
+  actions.current = {
+    saveTab,
+    closeTab,
+    closeAllTabs,
+    cycleTab,
+    refresh,
+    pickRepo,
+    gotoChange,
+    openCommit
+  }
+  // The commit dialog owns the keyboard while it's up: it has a text field in
+  // it, and Ctrl+S saving a file behind it — or Ctrl+Enter firing twice — is
+  // not what typing a message should do.
+  const commitOpenRef = useRef(commitOpen)
+  commitOpenRef.current = commitOpen
 
   useEffect(() => {
     const onKeyDown = (event) => {
-      const { saveTab, closeTab, closeAllTabs, cycleTab, refresh, pickRepo, gotoChange } =
-        actions.current
+      const {
+        saveTab,
+        closeTab,
+        closeAllTabs,
+        cycleTab,
+        refresh,
+        pickRepo,
+        gotoChange,
+        openCommit
+      } = actions.current
       const mod = event.ctrlKey || event.metaKey
       const active = activePathRef.current
 
-      if (mod && !event.shiftKey && event.key.toLowerCase() === 's') {
+      if (commitOpenRef.current) return
+
+      if (mod && event.key === 'Enter') {
+        event.preventDefault()
+        openCommit()
+      } else if (mod && !event.shiftKey && event.key.toLowerCase() === 's') {
         event.preventDefault()
         if (active) saveTab(active)
       } else if (mod && event.shiftKey && event.key.toLowerCase() === 's') {
@@ -609,6 +723,7 @@ export default function App() {
         onToggleApproved={toggleApproved}
         onRefresh={refresh}
         onPickRepo={pickRepo}
+        onCommit={openCommit}
       />
 
       <main className="main">
@@ -679,7 +794,7 @@ export default function App() {
       </main>
 
       {error && (
-        <div className="error-toast" role="alert">
+        <div className="toast error-toast" role="alert">
           <span>{error}</span>
           <button className="icon-button" onClick={() => setError(null)} title="Dismiss">
             ×
@@ -687,7 +802,24 @@ export default function App() {
         </div>
       )}
 
+      {notice && !error && (
+        <div className="toast notice-toast" role="status">
+          <span>{notice}</span>
+        </div>
+      )}
+
       {confirm && <ConfirmDialog {...confirm} />}
+
+      {commitOpen && (
+        <CommitDialog
+          files={approvedFiles}
+          dirtyPaths={dirtyPaths}
+          branch={repo.branch}
+          busy={committing}
+          onCommit={commit}
+          onCancel={() => setCommitOpen(false)}
+        />
+      )}
     </div>
   )
 }

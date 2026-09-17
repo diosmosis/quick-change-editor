@@ -8,6 +8,10 @@ import path from 'node:path'
 // files can be big.
 const MAX_BUFFER = 64 * 1024 * 1024
 
+// A failing command's own words are what gets shown; a runaway hook shouldn't
+// be able to fill the window with them.
+const MAX_MESSAGE_CHARS = 2000
+
 // Bookkeeping for the .git watcher. `git status` refreshes the index, which
 // writes .git/index (via .git/index.lock) — so the app's own reads look exactly
 // like someone else changing the repository, and acting on them would mean
@@ -42,8 +46,11 @@ function git(root, args) {
       (err, stdout, stderr) => {
         finished()
         if (err) {
-          const msg = stderr?.toString('utf8').trim() || err.message
-          reject(new Error(msg))
+          // A hook that rejects a commit says why on whichever stream it likes,
+          // and that explanation is the only thing the user can act on.
+          const said =
+            stderr?.toString('utf8').trim() || stdout?.toString('utf8').trim() || ''
+          reject(new Error(said ? said.slice(0, MAX_MESSAGE_CHARS) : err.message))
           return
         }
         resolve(stdout)
@@ -279,6 +286,95 @@ export async function changedFiles(root) {
     .map(({ unopenable, ...file }) => file)
   openable.sort((a, b) => a.path.localeCompare(b.path))
   return { files: openable, skipped: visible.length - openable.length }
+}
+
+// The half-finished operations that make committing part of a work tree a bad
+// idea, each a file or directory in the git dir. A merge and a cherry-pick git
+// refuses outright ("cannot do a partial commit during a merge"); a rebase it
+// allows, which is worse — the commit lands quietly on the detached head the
+// rebase is building and is lost when it finishes.
+const IN_PROGRESS = [
+  ['MERGE_HEAD', 'a merge'],
+  ['CHERRY_PICK_HEAD', 'a cherry-pick'],
+  ['REVERT_HEAD', 'a revert'],
+  ['rebase-merge', 'a rebase'],
+  ['rebase-apply', 'a rebase']
+]
+
+/** What the repository is in the middle of, phrased for a sentence, or null. */
+export async function operationInProgress(root) {
+  // --git-path rather than assuming .git/: a linked work tree's git dir is
+  // somewhere else entirely, and this is exactly what it's for.
+  const out = await gitOrNull(root, [
+    'rev-parse',
+    ...IN_PROGRESS.flatMap(([name]) => ['--git-path', name])
+  ])
+  if (!out) return null
+  const paths = out.toString('utf8').trim().split('\n')
+  for (let i = 0; i < IN_PROGRESS.length; i++) {
+    const rel = paths[i]?.trim()
+    if (rel && fs.existsSync(path.resolve(root, rel))) return IN_PROGRESS[i][1]
+  }
+  return null
+}
+
+/**
+ * Commits the given entries and nothing else, with the content they have in the
+ * work tree right now.
+ *
+ * Naming the paths on the commit is what makes this a review tool rather than a
+ * `git commit -a`: git takes those paths from the work tree and leaves every
+ * other entry in the index exactly as it found it, so whatever was staged for a
+ * file nobody approved stays staged and uncommitted.
+ *
+ * `entries` are the sidebar's own rows — { path, orig, kind } — because two of
+ * git's rules here need more than the path:
+ *
+ *  - a rename is two paths as far as a commit is concerned, and naming only the
+ *    new one commits the copy while leaving the old one in the tree;
+ *  - a path git has never seen can't be named in a partial commit at all
+ *    ("pathspec ... did not match any file(s) known to git"), so an untracked
+ *    file has to be added first.
+ */
+export async function commitFiles(root, entries, message) {
+  const text = message.trim()
+  if (!text) throw new Error('A commit message is required.')
+  if (entries.length === 0) throw new Error('No approved files to commit.')
+
+  const busy = await operationInProgress(root)
+  if (busy) {
+    throw new Error(
+      `This work tree is in the middle of ${busy}, and git won't commit part of one. ` +
+        'Finish it in a terminal first.'
+    )
+  }
+
+  const paths = []
+  for (const entry of entries) {
+    for (const candidate of [entry.path, entry.orig]) {
+      if (!candidate || paths.includes(candidate)) continue
+      // Nothing from the renderer gets handed to git without this check.
+      resolveInRepo(root, candidate)
+      paths.push(candidate)
+    }
+  }
+
+  const added = entries.filter((entry) => entry.kind === 'untracked').map((entry) => entry.path)
+  if (added.length > 0) await git(root, ['add', '--', ...added])
+
+  try {
+    await git(root, ['commit', '-m', text, '--', ...paths])
+  } catch (err) {
+    // A rejected commit — a pre-commit hook, an unset identity — would otherwise
+    // leave those files staged, which is not a state the app can explain. They
+    // were untracked a moment ago and so have nothing in HEAD, which is what
+    // makes dropping the index entry the exact inverse of the add above.
+    if (added.length > 0) await gitOrNull(root, ['rm', '--cached', '--force', '--', ...added])
+    throw err
+  }
+
+  const head = await gitOrNull(root, ['rev-parse', '--short', 'HEAD'])
+  return { hash: head?.toString('utf8').trim() || null, count: entries.length }
 }
 
 // The committed content a work-tree file should be compared against: HEAD's

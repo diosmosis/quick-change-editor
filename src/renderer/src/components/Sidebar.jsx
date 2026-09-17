@@ -170,7 +170,8 @@ export default function Sidebar({
   onOpen,
   onToggleApproved,
   onRefresh,
-  onPickRepo
+  onPickRepo,
+  onCommit
 }) {
   const [filter, setFilter] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set())
@@ -251,6 +252,25 @@ export default function Sidebar({
             onToggleApproved={onToggleApproved}
           />
         )}
+      </div>
+
+      {/* The end of a review pass. Disabled rather than hidden with nothing
+          ticked off, so it's visible as the thing the checkmarks lead to. */}
+      <div className="commit-bar">
+        <button
+          className="button primary commit-button"
+          onClick={onCommit}
+          disabled={!repo.root || approved.size === 0}
+          title={
+            approved.size === 0
+              ? 'Tick off the files you have reviewed first'
+              : `Commit the ${approved.size} approved file${approved.size === 1 ? '' : 's'} (Ctrl+Enter)`
+          }
+        >
+          {approved.size === 0
+            ? 'Commit approved files'
+            : `Commit ${approved.size} file${approved.size === 1 ? '' : 's'}`}
+        </button>
       </div>
 
       <footer className="sidebar-footer">

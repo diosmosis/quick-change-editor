@@ -76,10 +76,11 @@ function watchRepo(root) {
   }
 }
 
-async function setRepo(root, store) {
+async function setRepo(root, store, plugins) {
   state.root = root
   store.rememberRepo(root)
   watchRepo(root)
+  plugins.repoOpened(root)
   return { root, branch: await currentBranch(root) }
 }
 
@@ -170,7 +171,7 @@ async function readFileEntry(root, relPath, orig) {
   }
 }
 
-export function registerIpc(app, store, requestedRepo = null) {
+export function registerIpc(app, store, plugins, requestedRepo = null) {
   app.on('will-quit', () => state.watcher?.close())
 
   // ---- Repository -------------------------------------------------------
@@ -186,7 +187,7 @@ export function registerIpc(app, store, requestedRepo = null) {
       for (const candidate of candidates) {
         const root = await findRepoRoot(candidate)
         if (root) {
-          await setRepo(root, store)
+          await setRepo(root, store, plugins)
           break
         }
       }
@@ -211,7 +212,7 @@ export function registerIpc(app, store, requestedRepo = null) {
 
     const root = await findRepoRoot(chosen)
     if (!root) throw new Error(`Not a git work tree: ${chosen}`)
-    return setRepo(root, store)
+    return setRepo(root, store, plugins)
   })
 
   ipcMain.handle('repo:status', async () => {

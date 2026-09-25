@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Store } from './store'
 import { registerIpc } from './ipc'
+import { PluginManager } from './plugins'
 
 // Number of tabs with unsaved edits, kept up to date by the renderer so closing
 // the window can warn before throwing work away.
@@ -91,7 +92,11 @@ function createWindow() {
 
 app.whenReady().then(() => {
   const store = new Store(app)
-  registerIpc(app, store, repoFromArgv())
+  const plugins = new PluginManager(store)
+  plugins.load()
+  plugins.registerIpc()
+  app.on('will-quit', () => plugins.quit())
+  registerIpc(app, store, plugins, repoFromArgv())
   ipcMain.on('window:dirty', (_e, count) => {
     dirtyCount = Number(count) || 0
   })

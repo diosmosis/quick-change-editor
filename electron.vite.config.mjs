@@ -5,6 +5,10 @@ import { dirname, resolve } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// Plugins live beside src/ and are picked up by both the main process and the
+// renderer; see src/main/plugins.js.
+const alias = { '@plugins': resolve(__dirname, 'plugins') }
+
 // The policy is injected here rather than written into index.html because dev
 // needs one extra allowance: @vitejs/plugin-react injects its fast-refresh
 // preamble as an *inline* module script, which a script-src of 'self' alone
@@ -36,6 +40,7 @@ function csp(isDev) {
 export default defineConfig(({ mode }) => ({
   main: {
     plugins: [externalizeDepsPlugin()],
+    resolve: { alias },
     build: {
       rollupOptions: {
         input: resolve(__dirname, 'src/main/index.js')
@@ -52,6 +57,7 @@ export default defineConfig(({ mode }) => ({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
+    resolve: { alias },
     build: {
       rollupOptions: {
         input: resolve(__dirname, 'src/renderer/index.html'),

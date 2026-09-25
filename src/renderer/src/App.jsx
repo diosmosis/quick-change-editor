@@ -6,7 +6,10 @@ import BinaryFile from './components/BinaryFile'
 import ConfirmDialog from './components/ConfirmDialog'
 import CommitDialog from './components/CommitDialog'
 import CommandOutput from './components/CommandOutput'
+import SettingsPage from './components/SettingsPage'
+import { anyModalOpen } from './components/Modal'
 import { describeIndentation } from './lib/indentation'
+import { plugins, commands, overlays, broadcast } from './plugins'
 
 const api = window.api
 
@@ -143,6 +146,7 @@ export default function App() {
   // rejected attempt, which the dialog shows until the next one.
   const [commitHead, setCommitHead] = useState(undefined)
   const [commitFailure, setCommitFailure] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // Per-tab, updated straight from the editor: gutter counts, the caret, and
   // the indentation style read out of the file.
   const [stats, setStats] = useState({})
@@ -162,8 +166,10 @@ export default function App() {
   // Latest state for the window-level key handler, which is registered once.
   const tabsRef = useRef(tabs)
   const activePathRef = useRef(activePath)
+  const repoRef = useRef(repo)
   tabsRef.current = tabs
   activePathRef.current = activePath
+  repoRef.current = repo
 
   const editorRef = (path) => {
     if (!editorRefCallbacks.current.has(path)) {
@@ -633,6 +639,26 @@ export default function App() {
     }
   }, [refresh, syncOpenTabs, repo.root])
 
+  // ---- plugins -----------------------------------------------------------
+
+  // Only when the repository or its branch actually moves: `repo` is replaced
+  // wholesale on some refreshes that change neither.
+  useEffect(() => {
+    broadcast('repo:changed', { root: repo.root, branch: repo.branch })
+  }, [repo.root, repo.branch])
+
+  const runCommand = useCallback((command) => {
+    try {
+      command.run({ repo: { root: repoRef.current.root, branch: repoRef.current.branch } })
+    } catch (err) {
+      setError(message(err))
+    }
+  }, [])
+
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const settingsError = useCallback((err) => setError(message(err)), [])
+
   // ---- editor callbacks (stable, so editors don't re-render) -------------
 
   const onDirtyChange = useCallback(
@@ -689,13 +715,17 @@ export default function App() {
     refresh,
     pickRepo,
     gotoChange,
-    openCommit
+    openCommit,
+    runCommand
   }
   // The commit dialog owns the keyboard while it's up: it has a text field in
   // it, and Ctrl+S saving a file behind it — or Ctrl+Enter firing twice — is
   // not what typing a message should do.
   const commitOpenRef = useRef(commitOpen)
   commitOpenRef.current = commitOpen
+  // Likewise the settings page, which covers the whole window.
+  const settingsOpenRef = useRef(settingsOpen)
+  settingsOpenRef.current = settingsOpen
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -707,12 +737,14 @@ export default function App() {
         refresh,
         pickRepo,
         gotoChange,
-        openCommit
+        openCommit,
+        runCommand
       } = actions.current
       const mod = event.ctrlKey || event.metaKey
       const active = activePathRef.current
 
-      if (commitOpenRef.current) return
+      // Plugin dialogs are counted by the Modal they're drawn in.
+      if (commitOpenRef.current || settingsOpenRef.current || anyModalOpen()) return
 
       if (mod && event.key === 'Enter') {
         event.preventDefault()
@@ -752,6 +784,13 @@ export default function App() {
       } else if (event.key === 'F5') {
         event.preventDefault()
         refresh()
+      } else {
+        // The app's own shortcuts come first; a plugin can't take one over.
+        const command = commands.find((candidate) => candidate.matches?.(event))
+        if (command) {
+          event.preventDefault()
+          runCommand(command)
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
@@ -789,6 +828,9 @@ export default function App() {
         onRefresh={refresh}
         onPickRepo={pickRepo}
         onCommit={openCommit}
+        commands={commands}
+        onRunCommand={runCommand}
+        onOpenSettings={openSettings}
       />
 
       <main className="main">
@@ -908,6 +950,14 @@ export default function App() {
           onCancel={() => setCommitOpen(false)}
         />
       )}
+
+      {settingsOpen && (
+        <SettingsPage plugins={plugins} onBack={closeSettings} onError={settingsError} />
+      )}
+
+      {overlays.map(({ Component, key }) => (
+        <Component key={key} repo={repo} />
+      ))}
     </div>
   )
 }

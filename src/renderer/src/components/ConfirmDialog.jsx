@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { useModalClaim } from './Modal'
 
 /**
  * Modal used for the one destructive thing the app does: closing a tab that has
@@ -6,6 +7,8 @@ import React, { useEffect, useRef } from 'react'
  */
 export default function ConfirmDialog({ title, message, confirmLabel, extraLabel, onConfirm, onExtra, onCancel }) {
   const confirmRef = useRef(null)
+  // Ctrl+W behind "this tab has unsaved changes" should not close another tab.
+  useModalClaim()
 
   useEffect(() => {
     confirmRef.current?.focus()

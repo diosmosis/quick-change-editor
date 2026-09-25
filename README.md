@@ -47,6 +47,23 @@ tick them off, and commit the ones you ticked without leaving the window.
   file's changes the cursor is in — `3 / 8` — with arrows that do the same
   thing.
 
+- **PR description:** the button above the commit button asks Claude Code for a
+  pull request title and description for the current branch, and shows what
+  it is doing while it works. The answer lands in a text box to edit and copy;
+  nothing is sent to GitHub. Every prompt is confirmed before it goes out,
+  since each one spends tokens. Closing the popup doesn't stop a run, and
+  opening it again shows the same answer with your edits rather than asking
+  again — regenerating is a separate button. Answers are kept per branch for
+  as long as the window is open. Which executable to run (`claude`,
+  `claudebox`, …), its extra arguments and the prompt are in the settings; a
+  prompt left empty means the built-in one. This is the first
+  [plugin](#plugins).
+- **Settings:** the gear in the top left opens a page over the whole window,
+  with the plugins listed down the left (filterable) and the chosen one's
+  settings on the right. `Ctrl+S` saves, `Escape` or Back returns to the
+  editor, which is left exactly as it was; leaving with unsaved changes asks
+  first.
+
 The change bar is computed against `HEAD` in the renderer, not read out of `git
 diff`, so it follows what you type: undo a generated change by hand and its
 marker disappears without saving first. The navigator steps through the same
@@ -69,6 +86,7 @@ will ever send you to a line that was only respaced.
 | `Ctrl+↓` / `Ctrl+↑` | the same, for the arrow-key inclined |
 | `Ctrl+F` | find in the current file |
 | `F5` | refresh the changed-file list |
+| `Ctrl+Shift+D` | PR description |
 | `F12` | dev tools |
 
 Middle-clicking a tab closes it. Closing a tab with unsaved edits asks first, as
@@ -159,6 +177,59 @@ checkout from another terminal):
   version it wrote rather than dropping it. Ticks last as long as the window
   does; they are not written anywhere.
 
+## Plugins
+
+A plugin is a directory under `plugins/`, bundled with the app at build time —
+adding or changing one needs a rebuild, like any other change here. It has up to
+three files:
+
+| | |
+|---|---|
+| `plugin.js` | the manifest: `{ id, name, description, settings }`. Read by both processes. |
+| `main.js` | `export default function activate(ctx)`, run once in the main process at startup. |
+| `renderer.jsx` | `export default function setup(host)`, run once in the window. |
+
+`plugins/pr-description` is a complete example of all three.
+
+**Settings** are declared in the manifest and drawn on the settings page (the
+gear), so a plugin never builds its own settings UI:
+
+```js
+settings: [
+  { key: 'executable', label: 'Claude executable', type: 'string', default: 'claude', description: '…' }
+]
+```
+
+`type` is `string`, `text` (a textarea; `rows` sets its height), `number` or
+`boolean`. Values are stored in the app's `settings.json` under
+`plugins.<id>`, and always read back with every declared key present — one
+never saved reads as its `default`.
+
+**Main process** — `ctx` in `activate(ctx)`:
+
+| | |
+|---|---|
+| `ctx.handle(channel, fn)` | answers `host.invoke(channel, ...args)`; `fn` may be async |
+| `ctx.send(channel, payload)` | reaches `host.subscribe(channel, fn)` in the window |
+| `ctx.on(event, fn)` | `'repo:opened'` (`{ root }`), `'settings:changed'` (values), `'quit'` |
+| `ctx.getRepo()` | `{ root }` of the open repository, or `{ root: null }` |
+| `ctx.getSettings()` | this plugin's settings |
+
+**Renderer** — `host` in `setup(host)`:
+
+| | |
+|---|---|
+| `host.addCommand({ id, label, title?, shortcut?, run })` | a button in the sidebar above the commit button, and optionally a shortcut such as `'Ctrl+Shift+D'`. The app's own shortcuts win a clash. `run` gets `{ repo: { root, branch } }`. |
+| `host.addOverlay(Component)` | a component mounted for as long as the window is open, given `{ repo }` as props. Somewhere to draw dialogs from, and to keep state between one use and the next. |
+| `host.on(event, fn)` / `host.emit(event, payload)` | the plugin's own events, plus the app's `'repo:changed'` (`{ root, branch }`). `on` returns an unsubscribe function. |
+| `host.invoke(channel, ...args)` / `host.subscribe(channel, fn)` | the other ends of `ctx.handle` and `ctx.send`. |
+| `host.getSettings()` | a promise of this plugin's settings. |
+| `host.ui` | `{ Modal, ConfirmDialog, CommandOutput }` from the app, so a plugin's dialogs look and behave like the rest. While either is up the app's shortcuts stand down. |
+
+Everything is scoped to the plugin: channels and events can't collide with
+another plugin's. A plugin that throws while starting is logged and left out
+rather than taking the app down with it.
+
 ## Notes
 
 - Gitignored paths never appear in the list. Git itself hides the untracked
@@ -188,7 +259,9 @@ checkout from another terminal):
 src/main/       electron main: window, git commands, IPC handlers, settings
 src/preload/    the contextBridge surface the renderer sees (window.api)
 src/renderer/   react UI
+  src/plugins.js         loads the plugins' renderer halves (main halves: src/main/plugins.js)
   src/lib/linediff.js    Myers line diff, HEAD vs the editor's current text
   src/lib/diffGutter.js  the CodeMirror extension that draws the change bar
                          and the removed text of an opened change
+plugins/        one directory per plugin; see Plugins
 ```

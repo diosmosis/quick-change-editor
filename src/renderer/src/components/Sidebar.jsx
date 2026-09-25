@@ -175,7 +175,10 @@ export default function Sidebar({
   onToggleApproved,
   onRefresh,
   onPickRepo,
-  onCommit
+  onCommit,
+  commands,
+  onRunCommand,
+  onOpenSettings
 }) {
   const [filter, setFilter] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set())
@@ -215,6 +218,9 @@ export default function Sidebar({
           title="Refresh changed files (F5)"
         >
           ⟳
+        </button>
+        <button className="icon-button" onClick={onOpenSettings} title="Settings">
+          ⚙
         </button>
       </header>
 
@@ -257,6 +263,22 @@ export default function Sidebar({
           />
         )}
       </div>
+
+      {commands.length > 0 && (
+        <div className="plugin-bar">
+          {commands.map((command) => (
+            <button
+              key={command.key}
+              className="button plugin-command"
+              onClick={() => onRunCommand(command)}
+              disabled={!repo.root}
+              title={command.shortcut ? `${command.title ?? command.label} (${command.shortcut})` : command.title}
+            >
+              {command.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* The end of a review pass. Disabled rather than hidden with nothing
           ticked off, so it's visible as the thing the checkmarks lead to. */}

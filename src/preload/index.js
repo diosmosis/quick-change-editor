@@ -27,6 +27,23 @@ const api = {
     const listener = () => cb()
     ipcRenderer.on('repo:changed', listener)
     return () => ipcRenderer.removeListener('repo:changed', listener)
+  },
+
+  // plugins — see src/main/plugins.js. Settings are keyed by plugin id.
+  plugins: {
+    getSettings: () => ipcRenderer.invoke('plugins:settings:get'),
+    setSettings: (id, values) => ipcRenderer.invoke('plugins:settings:set', id, values),
+    // Calls a handler the plugin's main half registered with ctx.handle().
+    invoke: (id, channel, args) => ipcRenderer.invoke('plugin:call', id, channel, args),
+    // Hears what the plugin's main half sends with ctx.send(); returns an
+    // unsubscribe function.
+    subscribe: (id, channel, cb) => {
+      const listener = (_e, event) => {
+        if (event.id === id && event.channel === channel) cb(event.payload)
+      }
+      ipcRenderer.on('plugin:event', listener)
+      return () => ipcRenderer.removeListener('plugin:event', listener)
+    }
   }
 }
 

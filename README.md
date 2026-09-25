@@ -58,6 +58,22 @@ tick them off, and commit the ones you ticked without leaving the window.
   `claudebox`, …), its extra arguments and the prompt are in the settings; a
   prompt left empty means the built-in one. This is the first
   [plugin](#plugins).
+- **Iterate:** the button beside it slides a sheet in over the right of the
+  editor for review/fix rounds with Claude Code — not a dialog, so the editor
+  and file list stay usable while it's up, and it goes away and comes back with
+  a keypress (`Ctrl+Shift+E`; `Escape` inside it closes it too). Drag its left
+  edge to resize it, or expand it over the whole editor with the button in its
+  header. *Start review* asks Claude to review the branch and lists its
+  findings; mark each one *Ignore*, *Fix (recommended)* or *Fix (custom)* — the
+  last with your own instructions — and *Send to Claude* has it apply them. Its
+  answer stays in the panel, the file list and open tabs pick up the edits
+  straight away, and the session is then compacted (`/compact`) in the
+  background. Every prompt goes to the same session, so each review knows what
+  earlier ones reported; *New session* starts over, the way `/clear` would.
+  Closing the panel stops nothing, and reopening it carries on where it was. The
+  review prompt, the executable and its arguments are in the settings — the
+  review runs with read-only tools, and only the fix step gets permission to
+  edit.
 - **Settings:** the gear in the top left opens a page over the whole window,
   with the plugins listed down the left (filterable) and the chosen one's
   settings on the right. `Ctrl+S` saves, `Escape` or Back returns to the
@@ -87,6 +103,7 @@ will ever send you to a line that was only respaced.
 | `Ctrl+F` | find in the current file |
 | `F5` | refresh the changed-file list |
 | `Ctrl+Shift+D` | PR description |
+| `Ctrl+Shift+E` | show / hide the Iterate panel |
 | `F12` | dev tools |
 
 Middle-clicking a tab closes it. Closing a tab with unsaved edits asks first, as
@@ -189,7 +206,10 @@ three files:
 | `main.js` | `export default function activate(ctx)`, run once in the main process at startup. |
 | `renderer.jsx` | `export default function setup(host)`, run once in the window. |
 
-`plugins/pr-description` is a complete example of all three.
+`plugins/pr-description` is a complete example of all three, and
+`plugins/iterate` of a plugin with a panel. `plugins/lib/` holds code the
+plugins share — running Claude Code headless, for one — and, having no
+`plugin.js`, is not loaded as a plugin itself.
 
 **Settings** are declared in the manifest and drawn on the settings page (the
 gear), so a plugin never builds its own settings UI:
@@ -220,6 +240,9 @@ never saved reads as its `default`.
 | | |
 |---|---|
 | `host.addCommand({ id, label, title?, shortcut?, run })` | a button in the sidebar above the commit button, and optionally a shortcut such as `'Ctrl+Shift+D'`. The app's own shortcuts win a clash. `run` gets `{ repo: { root, branch } }`. |
+| `host.addPanel(Component, { title? })` | a sheet that slides in over the right of the editor, for something to keep coming back to while working. One per plugin, and one open at a time. Stays mounted while hidden, given `{ repo, open }` as props. |
+| `host.showPanel()` / `host.hidePanel()` / `host.togglePanel()` | open and close it. The app draws the panel's title, expand and close buttons, and handles resizing and `Escape`. |
+| `host.refreshRepo()` | re-read the changed-file list and the open tabs, as a window focus does — for after the plugin has changed files itself. |
 | `host.addOverlay(Component)` | a component mounted for as long as the window is open, given `{ repo }` as props. Somewhere to draw dialogs from, and to keep state between one use and the next. |
 | `host.on(event, fn)` / `host.emit(event, payload)` | the plugin's own events, plus the app's `'repo:changed'` (`{ root, branch }`). `on` returns an unsubscribe function. |
 | `host.invoke(channel, ...args)` / `host.subscribe(channel, fn)` | the other ends of `ctx.handle` and `ctx.send`. |
@@ -260,8 +283,10 @@ src/main/       electron main: window, git commands, IPC handlers, settings
 src/preload/    the contextBridge surface the renderer sees (window.api)
 src/renderer/   react UI
   src/plugins.js         loads the plugins' renderer halves (main halves: src/main/plugins.js)
+  src/components/PluginPanel.jsx  the sheet plugin panels slide in on
   src/lib/linediff.js    Myers line diff, HEAD vs the editor's current text
   src/lib/diffGutter.js  the CodeMirror extension that draws the change bar
                          and the removed text of an opened change
 plugins/        one directory per plugin; see Plugins
+  lib/          shared by the plugins, not a plugin itself
 ```

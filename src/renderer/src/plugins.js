@@ -10,6 +10,35 @@ const renderers = import.meta.glob('@plugins/*/renderer.jsx', { eager: true, imp
 
 const api = window.api
 
+// The one plugin panel showing down the right of the window, by plugin id, or
+// null. Kept out here rather than in App's state so that a plugin can open its
+// panel from anywhere, including code that runs outside React.
+let openPanel = null
+const panelListeners = new Set()
+
+function setOpenPanel(id) {
+  if (openPanel === id) return
+  openPanel = id
+  for (const fn of panelListeners) fn()
+}
+
+// For useSyncExternalStore in App.
+export function subscribePanels(fn) {
+  panelListeners.add(fn)
+  return () => panelListeners.delete(fn)
+}
+export function getOpenPanel() {
+  return openPanel
+}
+
+// What the app does when a plugin asks it to; see setAppActions.
+let appActions = { refresh: () => {} }
+
+// App hands over the things a plugin can ask of it, once it has them.
+export function setAppActions(actions) {
+  appActions = actions
+}
+
 // Pieces of the app's own UI a plugin can build with, so its dialogs look and
 // behave like the rest.
 const ui = { Modal, ConfirmDialog, CommandOutput }
@@ -32,7 +61,7 @@ function shortcutMatcher(shortcut) {
 
 function createPlugin(manifest, setup) {
   const listeners = new Map()
-  const plugin = { manifest, commands: [], overlays: [] }
+  const plugin = { manifest, commands: [], overlays: [], panel: null }
 
   const host = {
     id: manifest.id,
@@ -52,6 +81,24 @@ function createPlugin(manifest, setup) {
     addOverlay: (Component) => {
       plugin.overlays.push(Component)
     },
+
+    // A panel down the right of the window, beside the editor rather than over
+    // it, for something to keep coming back to while working through the
+    // diff. One per plugin, and one showing at a time: opening it closes any
+    // other plugin's. Like an overlay it stays mounted while hidden, and gets
+    // { repo, open } as props. `title` heads it, above the close button.
+    addPanel: (Component, { title } = {}) => {
+      plugin.panel = { Component, title: title ?? manifest.name ?? manifest.id }
+    },
+    showPanel: () => setOpenPanel(manifest.id),
+    hidePanel: () => {
+      if (openPanel === manifest.id) setOpenPanel(null)
+    },
+    togglePanel: () => setOpenPanel(openPanel === manifest.id ? null : manifest.id),
+
+    // Re-reads the changed-file list and the open tabs, as a window focus
+    // does — for after a plugin has changed files itself.
+    refreshRepo: () => appActions.refresh(),
 
     // The plugin's own events, plus the app's: 'repo:changed' ({ root, branch }).
     // Returns an unsubscribe function.
@@ -96,6 +143,12 @@ export const commands = plugins.flatMap((plugin) =>
 export const overlays = plugins.flatMap((plugin) =>
   plugin.overlays.map((Component, index) => ({ Component, key: `${plugin.manifest.id}:${index}` }))
 )
+
+export const panels = plugins
+  .filter((plugin) => plugin.panel)
+  .map((plugin) => ({ ...plugin.panel, key: plugin.manifest.id }))
+
+export const closePanel = () => setOpenPanel(null)
 
 // Passes an app event to every plugin.
 export function broadcast(event, payload) {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import Sidebar from './components/Sidebar'
 import Tabs from './components/Tabs'
 import Editor from './components/Editor'
@@ -7,9 +7,20 @@ import ConfirmDialog from './components/ConfirmDialog'
 import CommitDialog from './components/CommitDialog'
 import CommandOutput from './components/CommandOutput'
 import SettingsPage from './components/SettingsPage'
+import PluginPanel from './components/PluginPanel'
 import { anyModalOpen } from './components/Modal'
 import { describeIndentation } from './lib/indentation'
-import { plugins, commands, overlays, broadcast } from './plugins'
+import {
+  plugins,
+  commands,
+  overlays,
+  panels,
+  broadcast,
+  setAppActions,
+  subscribePanels,
+  getOpenPanel,
+  closePanel
+} from './plugins'
 
 const api = window.api
 
@@ -647,6 +658,19 @@ export default function App() {
     broadcast('repo:changed', { root: repo.root, branch: repo.branch })
   }, [repo.root, repo.branch])
 
+  // A plugin that has changed files itself asks for what a window focus does.
+  useEffect(() => {
+    setAppActions({
+      refresh: () => {
+        if (!repoRef.current.root) return
+        refresh()
+        syncOpenTabs()
+      }
+    })
+  }, [refresh, syncOpenTabs])
+
+  const openPanel = useSyncExternalStore(subscribePanels, getOpenPanel)
+
   const runCommand = useCallback((command) => {
     try {
       command.run({ repo: { root: repoRef.current.root, branch: repoRef.current.branch } })
@@ -907,6 +931,10 @@ export default function App() {
           {activeTab?.dirty && <span className="status-dirty">unsaved</span>}
         </footer>
       </main>
+
+      {panels.length > 0 && (
+        <PluginPanel panels={panels} openId={openPanel} repo={repo} onClose={closePanel} />
+      )}
 
       {error && (
         <div className="toast error-toast" role="alert">

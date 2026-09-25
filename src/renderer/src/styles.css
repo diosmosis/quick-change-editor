@@ -67,7 +67,7 @@ kbd {
 /* ---- layout ----------------------------------------------------------- */
 .app {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 300px minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
 }
@@ -372,6 +372,79 @@ kbd {
 }
 .plugin-command {
   flex: 1 1 auto;
+}
+
+/* ---- plugin panel ----------------------------------------------------- */
+/* A sheet over the editor, sliding in from the right. Above the editor, below
+   the settings page, toasts and dialogs. Closed, it waits off the edge of the
+   window, invisible so nothing in it takes focus; visibility is delayed on the
+   way out so the slide is seen. */
+.plugin-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  max-width: calc(100vw - 300px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.4);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition:
+    transform 0.2s ease,
+    width 0.2s ease,
+    visibility 0s linear 0.2s;
+}
+.plugin-panel.open {
+  transform: none;
+  visibility: visible;
+  transition:
+    transform 0.2s ease,
+    width 0.2s ease;
+}
+.plugin-panel.resizing {
+  transition: none;
+}
+/* Over the whole editor; the file list stays in view. */
+.plugin-panel.expanded {
+  width: calc(100vw - 300px);
+}
+.plugin-panel-body[hidden] {
+  display: none;
+}
+.plugin-panel-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+}
+.plugin-panel-resize:hover {
+  background: var(--accent);
+  opacity: 0.4;
+}
+.plugin-panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.plugin-panel-title {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+.plugin-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- tabs ------------------------------------------------------------- */

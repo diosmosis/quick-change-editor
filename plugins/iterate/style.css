@@ -1,0 +1,243 @@
+/* The panel fills its column: a toolbar on top, the buttons at the bottom,
+   and whatever the current step shows scrolling in between. */
+.itr-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.itr-empty {
+  padding: 16px 12px;
+  color: var(--muted);
+}
+
+.itr-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.itr-session {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.button.itr-small {
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
+.itr-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.itr-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.itr-spacer {
+  flex: 1 1 auto;
+}
+
+.itr-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.itr-error {
+  margin: 0;
+  color: var(--red);
+  white-space: pre-wrap;
+}
+
+.itr-heading {
+  margin: 0;
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.itr-summary {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 11.5px;
+}
+
+/* ---- a run under way ---- */
+.itr-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.itr-elapsed {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.itr-spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.itr-log {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px 8px 30px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  user-select: text;
+}
+.itr-log li {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.itr-log li:last-child {
+  color: var(--text);
+}
+.itr-log-empty {
+  padding-left: 10px;
+}
+
+/* ---- findings ---- */
+.itr-bulk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.itr-findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.itr-finding {
+  padding: 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.itr-finding.decided {
+  border-left-color: var(--green);
+}
+.itr-finding-title {
+  font-weight: 600;
+  line-height: 1.4;
+}
+.itr-finding-id {
+  color: var(--muted);
+  font-weight: 400;
+}
+.itr-finding-desc {
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.itr-finding-key {
+  color: var(--muted);
+}
+.itr-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.itr-choice {
+  padding: 3px 9px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.itr-choice:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+.itr-choice.selected {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(91, 140, 255, 0.18);
+}
+.itr-choice.ignore.selected {
+  border-color: var(--muted);
+  background: rgba(154, 157, 176, 0.18);
+}
+.itr-custom {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+  outline: none;
+}
+.itr-custom:focus {
+  border-color: var(--accent);
+}
+
+/* ---- Claude's answer ---- */
+.itr-output {
+  margin: 0;
+  padding: 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.itr-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.itr-compact.error {
+  color: var(--amber);
+}

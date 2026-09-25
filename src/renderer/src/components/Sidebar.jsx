@@ -77,16 +77,20 @@ function FileRow({ file, isActive, isOpen, isDirty, isApproved, depth, onOpen, o
   ]
     .filter(Boolean)
     .join(' ')
+  const label = file.orig ? `${file.orig} → ${file.path}` : file.path
 
   return (
     <div className={className} style={{ paddingLeft: 8 + depth * 12 }}>
       <button
         type="button"
         className="file-open"
-        title={file.orig ? `${file.orig} → ${file.path}` : file.path}
+        title={file.binary ? `${label} — binary, nothing to edit` : label}
         onClick={() => onOpen(file)}
       >
         <span className="file-name">{name}</span>
+        {/* Said on the row rather than only on opening it: a binary file can be
+            approved and committed from here, but not looked at. */}
+        {file.binary && <span className="file-binary">bin</span>}
         {isDirty && <span className="dirty-dot" title="Unsaved changes" />}
       </button>
       <button
@@ -235,7 +239,7 @@ export default function Sidebar({
               : files.length > 0
                 ? 'No file matches the filter.'
                 : skipped > 0
-                  ? 'Nothing editable has changed — only submodules and binary files.'
+                  ? 'Nothing has changed here — only submodules, which keep their own history.'
                   : 'The work tree is clean.'}
           </p>
         ) : (
@@ -282,8 +286,8 @@ export default function Sidebar({
         {skipped > 0 && (
           // Said out loud rather than hidden: the count would otherwise
           // disagree with `git status` for no visible reason.
-          <span title="Submodules and binary files, which this editor can't open">
-            {` · ${skipped} not editable`}
+          <span title="Submodules, whose changes belong to their own repository">
+            {` · ${skipped} submodule${skipped === 1 ? '' : 's'}`}
           </span>
         )}
       </footer>

@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import Tabs from './components/Tabs'
 import Editor from './components/Editor'
+import BinaryFile from './components/BinaryFile'
 import ConfirmDialog from './components/ConfirmDialog'
 import CommitDialog from './components/CommitDialog'
+import CommandOutput from './components/CommandOutput'
 import { describeIndentation } from './lib/indentation'
 
 const api = window.api
@@ -30,6 +32,7 @@ function sameFiles(a, b) {
         file.kind === other.kind &&
         file.staged === other.staged &&
         file.exists === other.exists &&
+        file.binary === other.binary &&
         file.orig === other.orig &&
         file.mtimeMs === other.mtimeMs &&
         file.size === other.size
@@ -120,18 +123,26 @@ function ChangeNav({ hunks, line, onGoto }) {
 export default function App() {
   const [repo, setRepo] = useState({ root: null, branch: null, recent: [] })
   const [files, setFiles] = useState([])
-  // Changed paths left out of the list because there's nothing to edit behind
-  // them — submodules and binary files.
+  // Changed paths left out of the list because there's nothing behind them at
+  // all — submodules, whose changes belong to their own repository.
   const [skipped, setSkipped] = useState(0)
   const [loading, setLoading] = useState(false)
   const [tabs, setTabs] = useState([])
   const [activePath, setActivePath] = useState(null)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  // What the hooks printed during the commit the notice is about, and whether
+  // someone opened it — the notice doesn't time out from under a reader.
+  const [noticeOutput, setNoticeOutput] = useState('')
+  const [noticePinned, setNoticePinned] = useState(false)
   const [confirm, setConfirm] = useState(null)
   // The commit dialog, and whether git is currently running on its behalf.
   const [committing, setCommitting] = useState(false)
   const [commitOpen, setCommitOpen] = useState(false)
+  // HEAD as an amend would see it (undefined until looked up), and the last
+  // rejected attempt, which the dialog shows until the next one.
+  const [commitHead, setCommitHead] = useState(undefined)
+  const [commitFailure, setCommitFailure] = useState(null)
   // Per-tab, updated straight from the editor: gutter counts, the caret, and
   // the indentation style read out of the file.
   const [stats, setStats] = useState({})
@@ -290,12 +301,15 @@ export default function App() {
 
   const saveTab = useCallback(async (path) => {
     const tab = tabsRef.current.find((candidate) => candidate.path === path)
-    const editor = editors.current.get(path)
-    if (!tab || !editor) return false
+    if (!tab) return false
+    // Ahead of looking for the editor: a binary tab hasn't got one, and
+    // Ctrl+S on it should say why rather than do nothing at all.
     if (tab.readOnly) {
-      setError(`${tab.name} is read-only.`)
+      setError(tab.binary ? `${tab.name} is a binary file.` : `${tab.name} is read-only.`)
       return false
     }
+    const editor = editors.current.get(path)
+    if (!editor) return false
     try {
       const result = await api.saveFile({ path, content: editor.content(), eol: tab.eol })
       writes.current++
@@ -450,12 +464,36 @@ export default function App() {
   // have. A tab with unsaved edits is never overwritten; it's flagged instead.
   const syncOpenTabs = useCallback(async () => {
     for (const tab of tabsRef.current) {
-      const editor = editors.current.get(tab.path)
-      if (!editor) continue
       try {
         const stat = await api.statFile(tab.path)
         const changedOnDisk = stat.exists && stat.mtimeMs !== tab.mtimeMs
         const fresh = await api.openFile({ path: tab.path, orig: tab.orig })
+        // Either side binary means there is no editor to reconcile — on one
+        // side because it holds no text, on the other because the tab is about
+        // to swap between the editor and the placeholder. Unsaved edits are the
+        // exception: a file that turned binary under them is flagged like any
+        // other outside rewrite rather than having them thrown away.
+        if (fresh.binary || tab.binary) {
+          if (tab.dirty) {
+            if (changedOnDisk) patchTab(tab.path, { stale: true })
+            continue
+          }
+          patchTab(tab.path, {
+            content: fresh.content,
+            base: fresh.base,
+            eol: fresh.eol,
+            size: fresh.size,
+            mtimeMs: fresh.mtimeMs,
+            exists: fresh.exists,
+            binary: fresh.binary,
+            readOnly: fresh.readOnly,
+            notice: fresh.notice,
+            stale: false
+          })
+          continue
+        }
+        const editor = editors.current.get(tab.path)
+        if (!editor) continue
         if (tab.dirty) {
           // Keep the edits; only the committed side of the gutter is refreshed,
           // which matters after a commit or a stage.
@@ -467,6 +505,8 @@ export default function App() {
         editor.setReadOnly(fresh.readOnly)
         patchTab(tab.path, {
           mtimeMs: fresh.mtimeMs,
+          size: fresh.size,
+          exists: fresh.exists,
           readOnly: fresh.readOnly,
           notice: fresh.notice,
           stale: false
@@ -487,16 +527,24 @@ export default function App() {
   )
 
   const openCommit = useCallback(() => {
-    if (approvedFiles.length > 0) setCommitOpen(true)
+    if (approvedFiles.length === 0) return
+    setCommitHead(undefined)
+    setCommitFailure(null)
+    setCommitOpen(true)
+    api.headCommit().then(
+      (head) => setCommitHead(head),
+      () => setCommitHead(null)
+    )
   }, [approvedFiles])
 
   const commit = useCallback(
-    async (text) => {
+    async (text, amend = false) => {
       if (approvedFiles.length === 0) return
       setCommitting(true)
       // A rejected commit leaves its error up so it can be read and acted on;
       // a second attempt is not the moment to still be showing the first one.
       setError(null)
+      setCommitFailure(null)
       try {
         // A tick was given to what was on screen, and an unsaved tab holds a
         // newer version than the one git would pick up off the disk. Writing
@@ -513,16 +561,30 @@ export default function App() {
             orig: file.orig ?? null,
             kind: file.kind
           })),
-          message: text
+          message: text,
+          amend
         })
+        if (!result.ok) {
+          // Shown in the dialog, which stays up: the output is the reason, and
+          // the message is still there to try again with.
+          setCommitFailure((previous) => ({
+            error: result.error,
+            output: result.output,
+            attempt: (previous?.attempt ?? 0) + 1
+          }))
+          return
+        }
         setCommitOpen(false)
         // Everything that was ticked off is now in a commit, so the pass is
         // over; the refresh below would drop these anyway as they leave the
         // changed-file list, but not until it comes back.
         setApproved(new Map())
+        setNoticeOutput(result.output)
+        setNoticePinned(false)
         setNotice(
-          `Committed ${result.count} file${result.count === 1 ? '' : 's'}` +
-            (result.hash ? ` as ${result.hash}` : '')
+          `${result.amended ? 'Amended the last commit with' : 'Committed'} ` +
+            `${result.count} file${result.count === 1 ? '' : 's'}` +
+            (result.hash ? `${result.amended ? ', now' : ' as'} ${result.hash}` : '')
         )
         // Our own git commands suppress the .git watcher — it can't tell them
         // from someone else's — so the refresh has to be asked for here. The
@@ -549,10 +611,10 @@ export default function App() {
   // Nothing has to be dismissed by hand: a commit's confirmation is worth a
   // glance, not a click.
   useEffect(() => {
-    if (!notice) return undefined
+    if (!notice || noticePinned) return undefined
     const timer = setTimeout(() => setNotice(null), NOTICE_MS)
     return () => clearTimeout(timer)
-  }, [notice])
+  }, [notice, noticePinned])
 
   useEffect(() => {
     const unsubscribe = api.onRepoChanged(() => {
@@ -704,9 +766,12 @@ export default function App() {
     [tabs]
   )
   const activeTab = tabs.find((tab) => tab.path === activePath) || null
-  const activeStats = activePath ? stats[activePath] : null
-  const activeCursor = activePath ? cursors[activePath] : null
-  const activeIndent = activePath ? indents[activePath] : null
+  // A binary tab has no editor, so nothing here is about it — and the entries
+  // could be left over from before the file on that path turned binary.
+  const editing = activeTab && !activeTab.binary
+  const activeStats = editing ? stats[activePath] : null
+  const activeCursor = editing ? cursors[activePath] : null
+  const activeIndent = editing ? indents[activePath] : null
 
   return (
     <div className="app">
@@ -743,19 +808,23 @@ export default function App() {
                   version on disk.
                 </div>
               )}
-              <Editor
-                ref={editorRef(tab.path)}
-                path={tab.path}
-                name={tab.name}
-                initialContent={tab.content}
-                initialBase={tab.base}
-                readOnly={tab.readOnly}
-                active={tab.path === activePath}
-                onDirtyChange={onDirtyChange}
-                onStats={onStats}
-                onCursor={onCursor}
-                onIndent={onIndent}
-              />
+              {tab.binary ? (
+                <BinaryFile path={tab.path} size={tab.size} exists={tab.exists} />
+              ) : (
+                <Editor
+                  ref={editorRef(tab.path)}
+                  path={tab.path}
+                  name={tab.name}
+                  initialContent={tab.content}
+                  initialBase={tab.base}
+                  readOnly={tab.readOnly}
+                  active={tab.path === activePath}
+                  onDirtyChange={onDirtyChange}
+                  onStats={onStats}
+                  onCursor={onCursor}
+                  onIndent={onIndent}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -787,8 +856,12 @@ export default function App() {
               {describeIndentation(activeIndent)}
             </span>
           )}
-          {activeTab && <span>{activeTab.eol === 'crlf' ? 'CRLF' : 'LF'}</span>}
-          {activeTab?.readOnly && <span className="status-readonly">read-only</span>}
+          {editing && <span>{activeTab.eol === 'crlf' ? 'CRLF' : 'LF'}</span>}
+          {activeTab?.binary ? (
+            <span className="status-readonly">binary</span>
+          ) : (
+            activeTab?.readOnly && <span className="status-readonly">read-only</span>
+          )}
           {activeTab?.dirty && <span className="status-dirty">unsaved</span>}
         </footer>
       </main>
@@ -803,8 +876,21 @@ export default function App() {
       )}
 
       {notice && !error && (
-        <div className="toast notice-toast" role="status">
-          <span>{notice}</span>
+        <div className={`toast notice-toast ${noticeOutput ? 'with-output' : ''}`} role="status">
+          <div className="toast-body">
+            <span>{notice}</span>
+            {/* Keyed by the notice so each commit's output starts folded. */}
+            <CommandOutput
+              key={notice}
+              output={noticeOutput}
+              onToggle={(open) => open && setNoticePinned(true)}
+            />
+          </div>
+          {noticePinned && (
+            <button className="icon-button" onClick={() => setNotice(null)} title="Dismiss">
+              ×
+            </button>
+          )}
         </div>
       )}
 
@@ -815,7 +901,9 @@ export default function App() {
           files={approvedFiles}
           dirtyPaths={dirtyPaths}
           branch={repo.branch}
+          head={commitHead}
           busy={committing}
+          failure={commitFailure}
           onCommit={commit}
           onCancel={() => setCommitOpen(false)}
         />

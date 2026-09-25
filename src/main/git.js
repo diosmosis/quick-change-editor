@@ -59,6 +59,53 @@ function git(root, args) {
   })
 }
 
+// What an interactive bash with no terminal says about job control before it
+// does anything else. It's the shell talking, not the command.
+const SHELL_NOISE = [/^bash: cannot set terminal process group\b.*$/gm, /^bash: no job control in this shell$/gm]
+
+// Runs git inside an interactive login bash rather than directly.
+//
+// The app is usually started from the desktop menu, whose environment never
+// sources ~/.bashrc (see launch.sh), so whatever a hook needs from it — nvm's
+// node for husky or lint-staged, a PATH entry for a linter — is missing and the
+// hook fails. Going through `bash -il` is what gives a hook the environment it
+// would have in a terminal. It costs a shell startup, which is why only the
+// commands that run hooks come through here.
+//
+// Resolves to { code, output }, where `output` is stdout and stderr interleaved
+// in the order they arrived: a hook's progress and its complaints only make
+// sense together. A non-zero exit resolves too; the caller decides what it means.
+function gitInShell(root, args) {
+  started()
+  return new Promise((resolve, reject) => {
+    // The arguments reach git as bash's positional parameters, so nothing in a
+    // commit message or a filename is ever parsed by the shell.
+    const child = spawn('bash', ['-ilc', 'exec git "$@"', 'bash', '-C', root, ...args], {
+      cwd: root,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    const chunks = []
+    child.stdout.on('data', (chunk) => chunks.push(chunk))
+    child.stderr.on('data', (chunk) => chunks.push(chunk))
+
+    let done = false
+    child.on('error', (err) => {
+      if (done) return
+      done = true
+      finished()
+      reject(new Error(`Could not start bash to run git: ${err.message}`))
+    })
+    child.on('close', (code) => {
+      if (done) return
+      done = true
+      finished()
+      let output = Buffer.concat(chunks).toString('utf8')
+      for (const noise of SHELL_NOISE) output = output.replace(noise, '')
+      resolve({ code: code ?? 1, output: output.replace(/^\n+/, '').trimEnd() })
+    })
+  })
+}
+
 // Same, but resolves to null instead of rejecting. Used where a non-zero exit
 // is an answer rather than a failure ("this path is not in HEAD").
 async function gitOrNull(root, args) {
@@ -178,7 +225,7 @@ function statOrNull(abs) {
 // The same first-block NUL test `looksBinary` does, but reading only that block
 // rather than the whole file — this runs over every changed path on every
 // refresh, and some of them are the multi-megabyte assets we're looking for.
-function looksBinaryOnDisk(abs) {
+export function looksBinaryOnDisk(abs) {
   let fd = null
   try {
     fd = fs.openSync(abs, 'r')
@@ -212,28 +259,24 @@ async function binaryInHead(root, paths) {
   return found
 }
 
-// Why a changed path isn't worth a row in the tree, or null if it is.
-//
 // A submodule is recorded as a single gitlink entry, so it arrives here looking
-// like an ordinary changed path whose work-tree counterpart is a directory —
-// there is nothing behind it to open, and its own changes belong to its own
-// repository. A binary file has nothing this editor can show either; it used to
-// be listed and then refuse to open.
-function unopenableBecause(stat, abs) {
-  if (!stat) return null // Gone from the work tree; `binaryInHead` judges these.
-  if (stat.isDirectory()) return 'submodule'
-  if (!stat.isFile()) return null // A fifo or socket; vanishingly rare, let it through.
-  return looksBinaryOnDisk(abs) ? 'binary' : null
+// like an ordinary changed path whose work-tree counterpart is a directory.
+// There is nothing behind it to open, and its own changes belong to its own
+// repository, so it's the one thing that doesn't get a row.
+function isSubmodule(stat) {
+  return stat !== null && stat.isDirectory()
 }
 
 /**
  * Every path git considers changed in the work tree: staged, unstaged and
- * untracked alike, minus anything gitignore covers and anything this editor
- * couldn't open anyway.
+ * untracked alike, minus anything gitignore covers and submodules.
  *
- * Returns { files, skipped }, where `skipped` counts what the last filter
- * dropped — the sidebar says so rather than quietly disagreeing with
- * `git status`.
+ * Binary files are listed like any other, carrying `binary: true` — they can't
+ * be edited, but they can be looked at, ticked off and committed, which is why
+ * leaving them out was wrong.
+ *
+ * Returns { files, skipped }, where `skipped` counts the submodules dropped —
+ * the sidebar says so rather than quietly disagreeing with `git status`.
  */
 export async function changedFiles(root) {
   const out = await git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
@@ -268,7 +311,11 @@ export async function changedFiles(root) {
       // rewrote it since it was last looked at.
       mtimeMs: stat ? stat.mtimeMs : 0,
       size: stat ? stat.size : 0,
-      unopenable: unopenableBecause(stat, abs)
+      submodule: isSubmodule(stat),
+      // A path that's gone from the work tree has nothing to sniff; those are
+      // judged against HEAD below. A fifo or socket is neither, and vanishingly
+      // rare — let it through as text and let opening it say otherwise.
+      binary: stat !== null && stat.isFile() && looksBinaryOnDisk(abs)
     })
   }
 
@@ -280,12 +327,15 @@ export async function changedFiles(root) {
     visible.filter((file) => !file.exists).map((file) => file.path)
   )
 
-  // `unopenable` was only ever a working note; it doesn't need to cross IPC.
-  const openable = visible
-    .filter((file) => file.unopenable === null && !binaryGone.has(file.path))
-    .map(({ unopenable, ...file }) => file)
-  openable.sort((a, b) => a.path.localeCompare(b.path))
-  return { files: openable, skipped: visible.length - openable.length }
+  // `submodule` was only ever a working note; it doesn't need to cross IPC.
+  const listed = visible
+    .filter((file) => !file.submodule)
+    .map(({ submodule, ...file }) => ({
+      ...file,
+      binary: file.binary || binaryGone.has(file.path)
+    }))
+  listed.sort((a, b) => a.path.localeCompare(b.path))
+  return { files: listed, skipped: visible.length - listed.length }
 }
 
 // The half-finished operations that make committing part of a work tree a bad
@@ -335,11 +385,21 @@ export async function operationInProgress(root) {
  *  - a path git has never seen can't be named in a partial commit at all
  *    ("pathspec ... did not match any file(s) known to git"), so an untracked
  *    file has to be added first.
+ *
+ * With `amend`, the entries are folded into HEAD instead and its message is
+ * replaced by `message`. Naming paths keeps the same meaning there: HEAD's tree
+ * plus those paths from the work tree, nothing else from the index.
+ *
+ * Hooks run, and whatever they print comes back as `output`. A rejected commit
+ * throws an error carrying the same `output`, since that's where the reason is.
  */
-export async function commitFiles(root, entries, message) {
+export async function commitFiles(root, entries, message, { amend = false } = {}) {
   const text = message.trim()
   if (!text) throw new Error('A commit message is required.')
   if (entries.length === 0) throw new Error('No approved files to commit.')
+  if (amend && !(await headCommit(root))) {
+    throw new Error('There is no commit to amend yet.')
+  }
 
   const busy = await operationInProgress(root)
   if (busy) {
@@ -362,27 +422,71 @@ export async function commitFiles(root, entries, message) {
   const added = entries.filter((entry) => entry.kind === 'untracked').map((entry) => entry.path)
   if (added.length > 0) await git(root, ['add', '--', ...added])
 
+  // --quiet drops git's own summary of the new commit, which the app reports
+  // itself, so what's left in the output is what the hooks had to say.
+  let result
   try {
-    await git(root, ['commit', '-m', text, '--', ...paths])
+    result = await gitInShell(root, [
+      'commit',
+      '--quiet',
+      ...(amend ? ['--amend'] : []),
+      '-m',
+      text,
+      '--',
+      ...paths
+    ])
   } catch (err) {
+    result = { code: null, output: '', error: err }
+  }
+
+  if (result.code !== 0) {
     // A rejected commit — a pre-commit hook, an unset identity — would otherwise
     // leave those files staged, which is not a state the app can explain. They
     // were untracked a moment ago and so have nothing in HEAD, which is what
     // makes dropping the index entry the exact inverse of the add above.
     if (added.length > 0) await gitOrNull(root, ['rm', '--cached', '--force', '--', ...added])
+    const err =
+      result.error ??
+      new Error(
+        `git commit${amend ? ' --amend' : ''} failed (exit code ${result.code})` +
+          (result.output ? '.' : ' without saying why.')
+      )
+    err.output = result.output
     throw err
   }
 
   const head = await gitOrNull(root, ['rev-parse', '--short', 'HEAD'])
-  return { hash: head?.toString('utf8').trim() || null, count: entries.length }
+  return {
+    hash: head?.toString('utf8').trim() || null,
+    count: entries.length,
+    amended: amend,
+    output: result.output
+  }
 }
 
-// The committed content a work-tree file should be compared against: HEAD's
-// version, or '' when there isn't one (untracked, newly added, or an unborn
-// HEAD in a repository with no commits).
+/**
+ * The commit HEAD points at, as { hash, subject, message }, or null on an unborn
+ * branch. `message` is the full body, which is what an amend starts from.
+ */
+export async function headCommit(root) {
+  // %x00 between the fields: a subject can hold anything but a NUL.
+  const out = await gitOrNull(root, ['log', '-1', '--format=%h%x00%s%x00%B', 'HEAD'])
+  if (!out) return null
+  const [hash, subject, ...body] = out.toString('utf8').split('\0')
+  if (!hash) return null
+  return { hash, subject, message: body.join('\0').trimEnd() }
+}
+
+// HEAD's version of a work-tree file as raw bytes, or null when there isn't one
+// (untracked, newly added, or an unborn HEAD in a repository with no commits).
+// `orig` is set for renames, where HEAD holds the content under the old path.
+export async function baseBuffer(root, relPath, origPath = null) {
+  return gitOrNull(root, ['show', `HEAD:${origPath || relPath}`])
+}
+
+// The committed content a work-tree file should be compared against, as text.
 export async function baseText(root, relPath, origPath = null) {
-  const source = origPath || relPath
-  const out = await gitOrNull(root, ['show', `HEAD:${source}`])
+  const out = await baseBuffer(root, relPath, origPath)
   if (out === null) return ''
   return normalizeEol(decode(out))
 }

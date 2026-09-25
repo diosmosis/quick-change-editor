@@ -6,8 +6,12 @@ const api = {
   getRepo: () => ipcRenderer.invoke('repo:get'),
   openRepo: (dir = null) => ipcRenderer.invoke('repo:open', dir),
   status: () => ipcRenderer.invoke('repo:status'),
-  // { files: [{ path, orig, kind }], message } — commits those paths only.
+  // { files: [{ path, orig, kind }], message, amend } — commits those paths
+  // only. Resolves to { ok: true, hash, count, amended, output } or
+  // { ok: false, error, output }; `output` is what the hooks printed.
   commit: (args) => ipcRenderer.invoke('repo:commit', args),
+  // { hash, subject, message } of HEAD, or null on an unborn branch.
+  headCommit: () => ipcRenderer.invoke('repo:head'),
 
   // files
   openFile: (file) => ipcRenderer.invoke('file:open', file),

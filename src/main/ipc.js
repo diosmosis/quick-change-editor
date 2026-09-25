@@ -8,10 +8,13 @@ import {
   currentBranch,
   changedFiles,
   commitFiles,
+  headCommit,
   gitIsSettled,
   baseText,
+  baseBuffer,
   resolveInRepo,
   looksBinary,
+  looksBinaryOnDisk,
   decode,
   detectEol,
   normalizeEol
@@ -80,47 +83,88 @@ async function setRepo(root, store) {
   return { root, branch: await currentBranch(root) }
 }
 
+// A tab for a file there is no text to show. It opens rather than erroring so
+// the file can be looked at, ticked off and committed like any other; the
+// renderer draws a placeholder instead of an editor.
+function binaryEntry(relPath, name, { size, mtimeMs, exists, notice }) {
+  return {
+    path: relPath,
+    name,
+    content: '',
+    base: '',
+    eol: 'lf',
+    size,
+    mtimeMs,
+    exists,
+    binary: true,
+    readOnly: true,
+    notice
+  }
+}
+
 // Reads a work-tree file plus the committed version it should be diffed
 // against. `orig` is set for renames, where HEAD holds the content under the
 // old path.
 async function readFileEntry(root, relPath, orig) {
   const abs = resolveInRepo(root, relPath)
-  const base = await baseText(root, relPath, orig)
   const name = path.basename(relPath)
 
   if (!fs.existsSync(abs)) {
     // Deleted from the work tree: show what HEAD had, read-only, so the tab is
     // still useful for looking at what went away.
+    const committed = await baseBuffer(root, relPath, orig)
+    if (committed !== null && looksBinary(committed)) {
+      return binaryEntry(relPath, name, {
+        size: committed.length,
+        mtimeMs: 0,
+        exists: false,
+        notice: 'Deleted in the work tree, and binary — showing the committed file’s size only.'
+      })
+    }
+    const base = committed === null ? '' : normalizeEol(decode(committed))
     return {
       path: relPath,
       name,
       content: base,
       base,
       eol: 'lf',
+      size: 0,
       mtimeMs: 0,
       exists: false,
+      binary: false,
       readOnly: true,
       notice: 'Deleted in the work tree — showing the committed version.'
     }
   }
 
   const stat = fs.statSync(abs)
+  // Ahead of the size check, and reading only the first block: a binary file is
+  // most of what the limit is there to keep out, and its tab costs nothing.
+  if (looksBinaryOnDisk(abs)) {
+    return binaryEntry(relPath, name, {
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      exists: true,
+      notice: null
+    })
+  }
+
   if (stat.size > MAX_FILE_BYTES) {
     throw new Error(`${name} is ${mb(stat.size)} MB — too large to open.`)
   }
 
-  const buf = fs.readFileSync(abs)
-  if (looksBinary(buf)) throw new Error(`${name} looks like a binary file.`)
-
-  const raw = decode(buf)
+  const raw = decode(fs.readFileSync(abs))
+  const base = await baseText(root, relPath, orig)
   return {
     path: relPath,
     name,
     content: normalizeEol(raw),
     base,
     eol: detectEol(raw),
+    size: stat.size,
     mtimeMs: stat.mtimeMs,
     exists: true,
+    binary: false,
     readOnly: false,
     notice: null
   }
@@ -179,15 +223,28 @@ export function registerIpc(app, store, requestedRepo = null) {
   // Commits the files the renderer says have been approved, and only those.
   // The entries are rebuilt field by field rather than passed through: they
   // arrive as arbitrary renderer values and end up as git arguments.
-  ipcMain.handle('repo:commit', async (_e, { files = [], message = '' } = {}) => {
+  //
+  // A rejected commit resolves rather than throws: an error crossing IPC keeps
+  // only its message, and the hook output that explains it would be lost.
+  ipcMain.handle('repo:commit', async (_e, { files = [], message = '', amend = false } = {}) => {
     const entries = files.map((file) => ({
       path: String(file?.path ?? ''),
       orig: file?.orig ? String(file.orig) : null,
       kind: String(file?.kind ?? '')
     }))
     if (entries.some((entry) => entry.path === '')) throw new Error('A file to commit had no path.')
-    return commitFiles(requireRepo(), entries, String(message))
+    try {
+      const result = await commitFiles(requireRepo(), entries, String(message), {
+        amend: amend === true
+      })
+      return { ok: true, ...result }
+    } catch (err) {
+      return { ok: false, error: err.message, output: err.output ?? '' }
+    }
   })
+
+  // The commit an amend would rewrite, or null when there isn't one yet.
+  ipcMain.handle('repo:head', async () => headCommit(requireRepo()))
 
   // ---- Files ------------------------------------------------------------
 

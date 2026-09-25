@@ -8,9 +8,11 @@ tick them off, and commit the ones you ticked without leaving the window.
 - **Left:** every changed path in the work tree — staged, unstaged and untracked
   alike — as a tree, with a status badge: `M` modified, `A` added (whether or
   not it has been staged), `D` deleted, `R` renamed, `T` type changed, `!`
-  conflicted. Hover for the full status. Paths with no text behind them —
-  submodules and binary files — are left out, and the footer says how many, so
-  the count still adds up against `git status`.
+  conflicted. Hover for the full status. Binary files are listed like anything
+  else, marked `bin`: they open to a tab that says so instead of an editor, so
+  they can still be ticked off and committed. Submodules are the one thing left
+  out — their changes belong to their own repository — and the footer says how
+  many, so the count still adds up against `git status`.
 - **Right:** the files you opened, one per tab, with syntax highlighting.
 - **Approving a file:** the faint check to the right of each name is there to
   tick off as you work through the list. A tick is against the file as it stood
@@ -170,9 +172,14 @@ checkout from another terminal):
   width where it uses spaces. It is measured from the text every time a file is
   opened or re-read from disk, and the status bar says what it found. A file
   with nothing to go on — a new, empty one — gets two spaces.
-- Binary files and anything over 8 MB are refused rather than opened.
+- A binary file opens to a placeholder — its path and size — rather than an
+  editor. Nothing about it can be changed here, but it takes part in a review
+  pass like any other row.
+- A text file over 8 MB is refused rather than opened. The limit doesn't apply
+  to binary files, which are recognised from their first block and never read
+  in full.
 - A file deleted from the work tree still opens, read-only, showing what `HEAD`
-  has.
+  has — or, if `HEAD` holds it as binary, its committed size.
 - One repository at a time, one window.
 
 ## Layout

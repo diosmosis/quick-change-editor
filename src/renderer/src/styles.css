@@ -320,6 +320,20 @@ kbd {
   background: var(--accent);
 }
 
+/* Quiet enough to skim past, there to explain a row that won't open into an
+   editor. */
+.file-binary {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg-3);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
 .empty {
   color: var(--muted);
   padding: 16px 12px;
@@ -442,6 +456,46 @@ kbd {
 }
 .notice.warn {
   color: var(--amber);
+}
+
+/* What a binary file's tab shows in place of an editor. */
+.binary-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--editor-bg);
+}
+.binary-card {
+  max-width: 420px;
+  text-align: center;
+  color: var(--muted);
+}
+.binary-card h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 10px 0 0;
+}
+.binary-glyph {
+  font-size: 26px;
+  opacity: 0.35;
+}
+.binary-path {
+  margin: 6px 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+.binary-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.binary-note {
+  margin: 14px 0 0;
+  line-height: 1.5;
 }
 
 .empty-state {
@@ -661,6 +715,66 @@ kbd {
   word-break: normal;
 }
 
+/* Amend toggle: HEAD is named beside it so it's clear what gets rewritten. */
+.commit-amend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 0;
+}
+.commit-amend.disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.commit-amend-head {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: monospace;
+  font-size: 11.5px;
+}
+
+.commit-failure {
+  margin: 0 0 16px;
+}
+.modal p.commit-error {
+  margin: 0 0 8px;
+  color: var(--red);
+  word-break: normal;
+}
+
+/* ---- command output --------------------------------------------------- */
+.command-output summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11.5px;
+  user-select: none;
+}
+.command-output summary:hover {
+  color: var(--text);
+}
+.command-output-count {
+  opacity: 0.7;
+}
+.command-output pre {
+  max-height: min(260px, 35vh);
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
 /* ---- toasts ----------------------------------------------------------- */
 .toast {
   position: fixed;
@@ -685,6 +799,17 @@ kbd {
 .notice-toast {
   border-color: var(--green);
   padding-right: 14px;
+}
+.notice-toast.with-output {
+  align-items: flex-start;
+  width: min(520px, calc(100vw - 32px));
+}
+.toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 /* ---- codemirror ------------------------------------------------------- */

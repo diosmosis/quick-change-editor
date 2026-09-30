@@ -6,7 +6,8 @@
 // Claude itself reported last — so a Claude that moves a resumed conversation
 // onto a new id is followed there. A repository with no session yet starts one
 // with its first prompt; newSession forgets it, which is what /clear would do,
-// without spending a run on saying so.
+// without spending a run on saying so. The sessions are kept across restarts,
+// so quitting mid-iteration and coming back carries on in the same one.
 //
 // Events sent to the renderer, each tagged with the runId run() was given:
 //   status  { runId, text }                        a line of progress
@@ -22,7 +23,8 @@ const SESSION_ID = /^[\w-]+$/
 export default function activate(ctx) {
   let current = null // { cancel } of the run under way
   // repository root → the session id to resume there
-  const sessions = new Map()
+  const sessions = new Map(Object.entries(ctx.getData('sessions', {})))
+  const saveSessions = () => ctx.setData('sessions', Object.fromEntries(sessions))
 
   const stop = () => {
     current?.cancel()
@@ -76,8 +78,9 @@ export default function activate(ctx) {
       onSession: (id) => {
         // Not once the session has been cleared: a run cancelled by that still
         // reports on its way out, and would bring the old session back.
-        if (run.cleared || !SESSION_ID.test(id)) return
+        if (run.cleared || !SESSION_ID.test(id) || sessions.get(root) === id) return
         sessions.set(root, id)
+        saveSessions()
       }
     })
     current = run
@@ -99,6 +102,7 @@ export default function activate(ctx) {
     if (current) current.cleared = true
     stop()
     sessions.delete(ctx.getRepo().root)
+    saveSessions()
   })
 
   ctx.on('quit', stop)

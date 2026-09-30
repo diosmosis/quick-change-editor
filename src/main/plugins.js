@@ -80,7 +80,13 @@ export class PluginManager extends EventEmitter {
       // 'repo:opened' ({ root }), 'settings:changed' (values), 'quit' ()
       on: (event, fn) => plugin.events.on(event, fn),
       getRepo: () => ({ root: this.root }),
-      getSettings: () => this.settings(id)
+      getSettings: () => this.settings(id),
+      // State the plugin keeps across restarts, apart from its settings.
+      getData: (key, fallback) => this.store.get('pluginData', {})[id]?.[key] ?? fallback,
+      setData: (key, value) => {
+        const all = this.store.get('pluginData', {})
+        this.store.set({ pluginData: { ...all, [id]: { ...all[id], [key]: value } } })
+      }
     }
   }
 

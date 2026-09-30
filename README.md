@@ -70,7 +70,9 @@ tick them off, and commit the ones you ticked without leaving the window.
   straight away, and the session is then compacted (`/compact`) in the
   background. Every prompt goes to the same session, so each review knows what
   earlier ones reported; *New session* starts over, the way `/clear` would.
-  Closing the panel stops nothing, and reopening it carries on where it was. The
+  Closing the panel stops nothing, and reopening it carries on where it was.
+  Each repository's session is remembered across restarts too, so quitting the
+  app mid-iteration and opening it again continues the same session. The
   review prompt, the executable and its arguments are in the settings — the
   review runs with the allowed tools (read-only by default), and only the fix
   step gets permission to edit. With `claudebox` neither restriction applies:
@@ -235,6 +237,7 @@ never saved reads as its `default`.
 | `ctx.on(event, fn)` | `'repo:opened'` (`{ root }`), `'settings:changed'` (values), `'quit'` |
 | `ctx.getRepo()` | `{ root }` of the open repository, or `{ root: null }` |
 | `ctx.getSettings()` | this plugin's settings |
+| `ctx.getData(key, fallback?)` / `ctx.setData(key, value)` | state kept across restarts, stored in `settings.json` under `pluginData.<id>`; values must be JSON |
 
 **Renderer** — `host` in `setup(host)`:
 

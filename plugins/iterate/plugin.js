@@ -26,14 +26,24 @@ export default {
         'shell, so anything on PATH in a terminal works.'
     },
     {
+      key: 'allowedTools',
+      label: 'Allowed tools',
+      type: 'string',
+      default: '"Bash(git:*)" Read Grep Glob',
+      description:
+        'Passed as --allowedTools on every prompt. Parsed by the shell, so quote as you would ' +
+        'in a terminal. Without permission to run git, Claude cannot see the branch. Not used ' +
+        'with claudebox, which runs without restrictions since it is already in a container.'
+    },
+    {
       key: 'extraArgs',
       label: 'Extra arguments',
       type: 'string',
-      default: '--allowedTools "Bash(git:*)" Read Grep Glob',
+      default: '',
       description:
-        'Appended to every prompt, after "-p <prompt> --output-format stream-json --verbose" ' +
-        'and the session flag, which the plugin always passes. Parsed by the shell, so quote ' +
-        'as you would in a terminal. Without permission to run git, Claude cannot see the branch.'
+        'Appended to every prompt, after "-p <prompt> --output-format stream-json --verbose", ' +
+        'the session flag and the allowed tools, which the plugin always passes. Parsed by the ' +
+        'shell, so quote as you would in a terminal.'
     },
     {
       key: 'fixArgs',
@@ -42,7 +52,8 @@ export default {
       default: '--permission-mode acceptEdits',
       description:
         'Added after the extra arguments above, only for the prompt that applies fixes — so ' +
-        'the review itself cannot edit anything. Without permission to edit, Claude cannot fix.'
+        'the review itself cannot edit anything. Without permission to edit, Claude cannot fix. ' +
+        'Not used with claudebox.'
     },
     {
       key: 'prompt',

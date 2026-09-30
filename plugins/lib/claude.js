@@ -2,6 +2,7 @@
 // the plugins that talk to Claude; not a plugin itself (there is no plugin.js
 // here, so the loader passes this directory by).
 import { spawn } from 'node:child_process'
+import { basename } from 'node:path'
 
 // What an interactive bash with no terminal says before it does anything else.
 const SHELL_NOISE = /^bash: (cannot set terminal process group\b.*|no job control in this shell)$/
@@ -57,6 +58,11 @@ function summarize(result) {
   if (result.num_turns) parts.push(`${result.num_turns} turn${result.num_turns === 1 ? '' : 's'}`)
   if (typeof result.total_cost_usd === 'number') parts.push(`$${result.total_cost_usd.toFixed(2)}`)
   return parts.join(' · ')
+}
+
+// Whether the executable is claudebox, which runs Claude in a container.
+export function isClaudebox(executable) {
+  return basename(executable.trim()) === 'claudebox'
 }
 
 // Starts `<executable> -p <prompt> --output-format stream-json --verbose

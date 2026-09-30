@@ -72,8 +72,9 @@ tick them off, and commit the ones you ticked without leaving the window.
   earlier ones reported; *New session* starts over, the way `/clear` would.
   Closing the panel stops nothing, and reopening it carries on where it was. The
   review prompt, the executable and its arguments are in the settings — the
-  review runs with read-only tools, and only the fix step gets permission to
-  edit.
+  review runs with the allowed tools (read-only by default), and only the fix
+  step gets permission to edit. With `claudebox` neither restriction applies:
+  it is already in a container, so every run bypasses permissions.
 - **Settings:** the gear in the top left opens a page over the whole window,
   with the plugins listed down the left (filterable) and the chosen one's
   settings on the right. `Ctrl+S` saves, `Escape` or Back returns to the

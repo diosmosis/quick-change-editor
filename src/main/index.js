@@ -31,6 +31,10 @@ function createWindow() {
     minHeight: 600,
     title: 'Quick Change Editor',
     backgroundColor: '#16171c',
+    // Linux window managers take the taskbar/panel icon from the window itself
+    // (_NET_WM_ICON), not the .desktop entry. nativeImage can't read SVG, hence
+    // a PNG rendering of assets/icon.svg.
+    icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),

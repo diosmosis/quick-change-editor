@@ -12,7 +12,7 @@
 //   status  { runId, text }                        a line of progress
 //   done    { runId, text, summary, sessionId }    the answer, and a one-line footer
 //   error   { runId, message }                     it failed, or was cancelled
-import { runClaude } from '../lib/claude.js'
+import { isClaudebox, runClaude } from '../lib/claude.js'
 import { DEFAULT_REVIEW_PROMPT } from './plugin.js'
 
 // Only ever put into the shell script as a word of its own, but it arrives from
@@ -39,14 +39,21 @@ export default function activate(ctx) {
     const executable = settings.executable.trim()
     if (!executable) throw new Error('Set the Claude executable in Settings first.')
 
+    // claudebox is already a container, so it gets no restrictions at all.
+    const unrestricted = isClaudebox(executable)
+    const allowedTools = settings.allowedTools.trim()
+    let permissionArgs = ''
+    if (unrestricted) permissionArgs = '--permission-mode bypassPermissions'
+    else if (allowedTools) permissionArgs = `--allowedTools ${allowedTools}`
+
     let text
-    let extraArgs = settings.extraArgs
+    let extraArgs = `${permissionArgs} ${settings.extraArgs}`
     if (kind === 'review') {
       text = settings.prompt.trim() || DEFAULT_REVIEW_PROMPT
     } else if (kind === 'fix') {
       text = String(prompt ?? '').trim()
       if (!text) throw new Error('There is nothing to send.')
-      extraArgs = `${extraArgs} ${settings.fixArgs}`
+      if (!unrestricted) extraArgs = `${extraArgs} ${settings.fixArgs}`
     } else if (kind === 'compact') {
       if (!sessions.has(root)) throw new Error('There is no session to compact.')
       text = '/compact'

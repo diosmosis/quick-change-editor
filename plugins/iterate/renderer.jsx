@@ -316,16 +316,17 @@ function Iterate({ host, repo }) {
           return current
         })
       ),
-      host.subscribe('done', ({ runId, text, summary, sessionId }) => {
+      host.subscribe('done', ({ runId, text, summary, sessionId, compacts }) => {
         settle(runId, { text, summary, sessionId })
         const run = runs.current.get(runId)
         runs.current.delete(runId)
         if (run?.kind === 'fix') {
           // Claude has changed files: the list should show them now, not at
           // the next window focus. Then the session is compacted, so round
-          // after round of reviews doesn't run it out of context.
+          // after round of reviews doesn't run it out of context — unless the
+          // agent compacts by itself, which opencode does.
           host.refreshRepo()
-          startRun(run.key, 'compact')
+          if (compacts) startRun(run.key, 'compact')
         }
       }),
       host.subscribe('error', ({ runId, message: error }) => {

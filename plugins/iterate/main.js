@@ -7,17 +7,24 @@
 // onto a new id is followed there. A repository with no session yet starts one
 // with its first prompt; newSession forgets it, which is what /clear would do,
 // without spending a run on saying so. The sessions are kept across restarts,
-// so quitting mid-iteration and coming back carries on in the same one.
+// so quitting mid-iteration and coming back carries on in the same one —
+// separately for Claude and opencode, which cannot resume each other's.
+//
+// opencode (`opencode`, or `claudebox opencode`) has no /compact to send
+// headless; it compacts a session itself when it nears the context limit, so
+// with it the compact step is skipped.
 //
 // Events sent to the renderer, each tagged with the runId run() was given:
 //   status  { runId, text }                        a line of progress
-//   done    { runId, text, summary, sessionId }    the answer, and a one-line footer
+//   done    { runId, text, summary, sessionId, compacts }
+//                                                  the answer, a one-line footer, and
+//                                                  whether a compact should follow
 //   error   { runId, message }                     it failed, or was cancelled
-import { isClaudebox, runClaude } from '../lib/claude.js'
+import { agentOf, permissionArgs, runClaude } from '../lib/claude.js'
 import { DEFAULT_REVIEW_PROMPT } from './plugin.js'
 
-// Only ever put into the shell script as a word of its own, but it arrives from
-// Claude's output, so it is checked before that happens.
+// Passed to the agent as an argument of its own, but it arrives from the
+// agent's output, so it is checked before it is kept.
 const SESSION_ID = /^[\w-]+$/
 
 export default function activate(ctx) {
@@ -25,6 +32,9 @@ export default function activate(ctx) {
   // repository root → the session id to resume there
   const sessions = new Map(Object.entries(ctx.getData('sessions', {})))
   const saveSessions = () => ctx.setData('sessions', Object.fromEntries(sessions))
+  // Claude's sessions are kept under the bare root, as they always were.
+  const sessionKey = (root) =>
+    agentOf(ctx.getSettings().executable).opencode ? `opencode:${root}` : root
 
   const stop = () => {
     current?.cancel()
@@ -40,31 +50,27 @@ export default function activate(ctx) {
     const settings = ctx.getSettings()
     const executable = settings.executable.trim()
     if (!executable) throw new Error('Set the Claude executable in Settings first.')
+    const key = sessionKey(root)
 
-    // claudebox is already a container, so it gets no restrictions at all.
-    const unrestricted = isClaudebox(executable)
-    const allowedTools = settings.allowedTools.trim()
-    let permissionArgs = ''
-    if (unrestricted) permissionArgs = '--permission-mode bypassPermissions'
-    else if (allowedTools) permissionArgs = `--allowedTools ${allowedTools}`
+    // The fix arguments are Claude's permission modes, which neither claudebox
+    // (unrestricted already) nor opencode (no such flags) takes.
+    const { claudebox, opencode } = agentOf(executable)
 
     let text
-    let extraArgs = `${permissionArgs} ${settings.extraArgs}`
+    let extraArgs = `${permissionArgs(executable, settings.allowedTools)} ${settings.extraArgs}`
     if (kind === 'review') {
       text = settings.prompt.trim() || DEFAULT_REVIEW_PROMPT
     } else if (kind === 'fix') {
       text = String(prompt ?? '').trim()
       if (!text) throw new Error('There is nothing to send.')
-      if (!unrestricted) extraArgs = `${extraArgs} ${settings.fixArgs}`
+      if (!claudebox && !opencode) extraArgs = `${extraArgs} ${settings.fixArgs}`
     } else if (kind === 'compact') {
-      if (!sessions.has(root)) throw new Error('There is no session to compact.')
+      if (opencode) throw new Error('opencode compacts its sessions itself.')
+      if (!sessions.has(key)) throw new Error('There is no session to compact.')
       text = '/compact'
     } else {
       throw new Error(`Unknown kind of run: ${kind}`)
     }
-
-    const sessionId = sessions.get(root)
-    if (sessionId) extraArgs = `--resume ${sessionId} ${extraArgs}`
 
     stop()
     const emit = (channel, payload) => ctx.send(channel, { runId, ...payload })
@@ -73,20 +79,22 @@ export default function activate(ctx) {
       executable,
       extraArgs,
       prompt: text,
+      sessionId: sessions.get(key),
       cwd: root,
       onStatus: (line) => emit('status', { text: line }),
       onSession: (id) => {
         // Not once the session has been cleared: a run cancelled by that still
         // reports on its way out, and would bring the old session back.
-        if (run.cleared || !SESSION_ID.test(id) || sessions.get(root) === id) return
-        sessions.set(root, id)
+        if (run.cleared || !SESSION_ID.test(id) || sessions.get(key) === id) return
+        sessions.set(key, id)
         saveSessions()
       }
     })
     current = run
     run.result
       .then(
-        (answer) => emit('done', { ...answer, sessionId: sessions.get(root) ?? null }),
+        (answer) =>
+          emit('done', { ...answer, sessionId: sessions.get(key) ?? null, compacts: !opencode }),
         (err) => emit('error', { message: err.message })
       )
       .finally(() => {
@@ -96,12 +104,12 @@ export default function activate(ctx) {
 
   ctx.handle('cancel', stop)
 
-  ctx.handle('session', () => ({ sessionId: sessions.get(ctx.getRepo().root) ?? null }))
+  ctx.handle('session', () => ({ sessionId: sessions.get(sessionKey(ctx.getRepo().root)) ?? null }))
 
   ctx.handle('newSession', () => {
     if (current) current.cleared = true
     stop()
-    sessions.delete(ctx.getRepo().root)
+    sessions.delete(sessionKey(ctx.getRepo().root))
     saveSessions()
   })
 

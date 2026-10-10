@@ -55,8 +55,10 @@ tick them off, and commit the ones you ticked without leaving the window.
   opening it again shows the same answer with your edits rather than asking
   again — regenerating is a separate button. Answers are kept per branch for
   as long as the window is open. Which executable to run (`claude`,
-  `claudebox`, …), its extra arguments and the prompt are in the settings; a
-  prompt left empty means the built-in one. This is the first
+  `claudebox`, `claudebox opencode`, …), the tools it may use, its extra
+  arguments and the prompt are in the settings; a prompt left empty means the
+  built-in one. Permissions follow the executable the way they do for
+  Iterate below. This is the first
   [plugin](#plugins).
 - **Iterate:** the button beside it slides a sheet in over the right of the
   editor for review/fix rounds with Claude Code — not a dialog, so the editor
@@ -76,7 +78,11 @@ tick them off, and commit the ones you ticked without leaving the window.
   review prompt, the executable and its arguments are in the settings — the
   review runs with the allowed tools (read-only by default), and only the fix
   step gets permission to edit. With `claudebox` neither restriction applies:
-  it is already in a container, so every run bypasses permissions.
+  it is already in a container, so every run bypasses permissions. The
+  executable can be opencode too — `opencode`, or `claudebox opencode`, which
+  runs with `--auto` for the same reason; plain `opencode` takes its
+  permissions from its own config. opencode compacts sessions itself, so with
+  it there is no `/compact` after a fix.
 - **Settings:** the gear in the top left opens a page over the whole window,
   with the plugins listed down the left (filterable) and the chosen one's
   settings on the right. `Ctrl+S` saves, `Escape` or Back returns to the

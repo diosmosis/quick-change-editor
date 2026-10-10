@@ -18,18 +18,30 @@ export default {
       type: 'string',
       default: 'claude',
       description:
-        'The command that runs Claude Code, e.g. claude or claudebox. Run through a login ' +
-        'shell, so anything on PATH in a terminal works.'
+        'The command that runs Claude Code, e.g. claude or claudebox — or opencode, e.g. ' +
+        'opencode or claudebox opencode. Run through a login shell, so anything on PATH in a ' +
+        'terminal works, and parsed by it, so quote a path with spaces in it.'
+    },
+    {
+      key: 'allowedTools',
+      label: 'Allowed tools',
+      type: 'string',
+      default: '"Bash(git:*)" Read Grep Glob',
+      description:
+        'Passed as --allowedTools. Parsed by the shell, so quote as you would in a terminal. ' +
+        'Without permission to run git, Claude cannot see the branch. Not used with claudebox, ' +
+        'which runs without restrictions since it is already in a container, nor with ' +
+        'opencode, which takes its permissions from its own config.'
     },
     {
       key: 'extraArgs',
       label: 'Extra arguments',
       type: 'string',
-      default: '--allowedTools "Bash(git:*)" Read Grep Glob',
+      default: '',
       description:
-        'Appended after "-p <prompt> --output-format stream-json --verbose", which the plugin ' +
-        'always passes. Parsed by the shell, so quote as you would in a terminal. Without ' +
-        'permission to run git, Claude cannot see the branch.'
+        'Appended after "-p <prompt> --output-format stream-json --verbose" and the allowed ' +
+        'tools, which the plugin always passes (for opencode, "run --format json"). Parsed by ' +
+        'the shell, so quote as you would in a terminal.'
     },
     {
       key: 'prompt',

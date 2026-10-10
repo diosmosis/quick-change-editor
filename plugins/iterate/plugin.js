@@ -22,8 +22,9 @@ export default {
       type: 'string',
       default: 'claude',
       description:
-        'The command that runs Claude Code, e.g. claude or claudebox. Run through a login ' +
-        'shell, so anything on PATH in a terminal works.'
+        'The command that runs Claude Code, e.g. claude or claudebox — or opencode, e.g. ' +
+        'opencode or claudebox opencode. Run through a login shell, so anything on PATH in a ' +
+        'terminal works, and parsed by it, so quote a path with spaces in it.'
     },
     {
       key: 'allowedTools',
@@ -33,7 +34,8 @@ export default {
       description:
         'Passed as --allowedTools on every prompt. Parsed by the shell, so quote as you would ' +
         'in a terminal. Without permission to run git, Claude cannot see the branch. Not used ' +
-        'with claudebox, which runs without restrictions since it is already in a container.'
+        'with claudebox, which runs without restrictions since it is already in a container, ' +
+        'nor with opencode, which takes its permissions from its own config.'
     },
     {
       key: 'extraArgs',
@@ -42,8 +44,9 @@ export default {
       default: '',
       description:
         'Appended to every prompt, after "-p <prompt> --output-format stream-json --verbose", ' +
-        'the session flag and the allowed tools, which the plugin always passes. Parsed by the ' +
-        'shell, so quote as you would in a terminal.'
+        'the session flag and the allowed tools, which the plugin always passes (for opencode, ' +
+        '"run --format json" and the session flag). Parsed by the shell, so quote as you would ' +
+        'in a terminal.'
     },
     {
       key: 'fixArgs',
@@ -53,7 +56,7 @@ export default {
       description:
         'Added after the extra arguments above, only for the prompt that applies fixes — so ' +
         'the review itself cannot edit anything. Without permission to edit, Claude cannot fix. ' +
-        'Not used with claudebox.'
+        'Not used with claudebox or opencode.'
     },
     {
       key: 'prompt',
